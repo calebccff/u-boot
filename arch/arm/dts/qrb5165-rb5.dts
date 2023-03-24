@@ -1,0 +1,125 @@
+// SPDX-License-Identifier: GPL-2.0+
+/*
+ * Qualcomm QRB5165-RB5 evaluation board device tree source
+ *
+ * (C) Copyright 2023 Bhupesh Sharma <bhupesh.sharma@linaro.org>
+ */
+
+/dts-v1/;
+
+#include "skeleton64.dtsi"
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/clock/qcom,gcc-sm8250.h>
+
+/ {
+	model = "Qualcomm Technologies, Inc. QRB5165 RB5";
+	compatible = "qcom,qrb5165-rb5", "qcom,sm8250";
+	#address-cells = <2>;
+	#size-cells = <2>;
+
+	chosen {
+		stdout-path = "serial0:115200n8";
+	};
+
+	aliases {
+		serial0 = &debug_uart;
+	};
+
+	memory {
+		device_type = "memory";
+		reg = <0 0x80000000 0 0x40000000>;
+	};
+
+	psci {
+		compatible = "arm,psci-1.0";
+		method = "smc";
+	};
+
+	soc {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges = <0 0 0 0xffffffff>;
+		compatible = "simple-bus";
+
+		tlmm: pinctrl_west@f100000 {
+			compatible = "qcom,sm8250-pinctrl";
+			reg = <0x0f100000 0x300000>;
+			gpio-count = <181>;
+			gpio-controller;
+			#gpio-cells = <2>;
+			gpio-ranges = <&tlmm 0 0 181>;
+
+			/* DEBUG UART */
+			debug_uart_on: debug-uart-default {
+				pins = "GPIO_117", "GPIO_118";
+				function = "qup2";
+			};
+		};
+
+		gcc: clock-controller@100000 {
+			compatible = "qcom,gcc-sm8250";
+			reg = <0x00100000 0x1f0000>;
+			#clock-cells = <1>;
+			#reset-cells = <1>;
+			#power-domain-cells = <1>;
+		};
+
+		reset: gcc-reset@100000 {
+			compatible = "qcom,gcc-reset-sm8250";
+			reg = <0x00100000 0x1f0000>;
+			#reset-cells = <1>;
+		};
+
+		debug_uart: serial@988000 {
+			compatible = "qcom,msm-geni-uart";
+			reg = <0x00988000 0x4000>;
+			clock-names = "se-clk";
+			clocks = <&gcc GCC_QUPV3_WRAP0_S2_CLK>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&debug_uart_on>;
+		};
+
+		spmi@c440000 {
+			compatible = "qcom,spmi-pmic-arb";
+			reg = <0xc40a000 0x26000>,
+			      <0xc440000 0x1100>,
+			      <0x0e60000 0x100000>;
+			reg-names = "cnfg", "core", "obsrvr";
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			pm8150: pm8150@0 {
+				compatible = "qcom,spmi-pmic";
+				reg = <0x0 0x1>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				pm8150_pon: pm8150_pon@800 {
+					compatible = "qcom,pm8941-pwrkey";
+					reg = <0x800 0x100>;
+					#gpio-cells = <2>;
+					gpio-controller;
+					gpio-bank-name = "pm8941_key.";
+				};
+
+				pm8150_gpios: pm8150_gpios@c000 {
+					compatible = "qcom,pm8941-gpio";
+					reg = <0xc000>;
+					gpio-controller;
+					gpio-count = <10>;
+					#gpio-cells = <2>;
+					gpio-bank-name="pmic";
+				};
+			};
+
+			pmic1: pm8150@1 {
+				compatible = "qcom,spmi-pmic";
+				reg = <0x1 0x0>;
+				#address-cells = <0x2>;
+				#size-cells = <0x0>;
+			};
+		};
+	};
+};
+
+#include "qrb5165-rb5-uboot.dtsi"

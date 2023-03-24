@@ -87,6 +87,17 @@ config TARGET_QRB4210RB2
 	  - 2GiB RAM
 	  - 16GiB eMMC
 
+config TARGET_QRB5165RB5
+	bool "Qualcomm Technologies, Inc. QRB5165 RB5"
+	select LINUX_KERNEL_IMAGE_HEADER
+	select MISC_INIT_R
+	help
+	  Support for Qualcomm Technologies, Inc. QRB5165 RB5 board.
+	  Features:
+	  - Qualcomm Snapdragon SM8250 SoC
+	  - 2GiB RAM
+	  - 16GiB eMMC
+
 endchoice
 
 source "board/qualcomm/dragonboard410c/Kconfig"
@@ -95,5 +106,6 @@ source "board/qualcomm/dragonboard845c/Kconfig"
 source "board/samsung/starqltechn/Kconfig"
 source "board/qualcomm/qcs404-evb/Kconfig"
 source "board/qualcomm/qrb4210-rb2/Kconfig"
+source "board/qualcomm/qrb5165-rb5/Kconfig"
 
 endif
