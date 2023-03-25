@@ -247,13 +247,20 @@ static inline void geni_serial_baud(phys_addr_t base_address, u32 clk_div,
 
 int msm_serial_setbrg(struct udevice *dev, int baud)
 {
+	u64 sampling_rate = UART_OVERSAMPLING;
 	struct msm_serial_data *priv = dev_get_priv(dev);
+	ofnode dp;
 
 	priv->baud = baud;
 	u32 clk_div;
 	u64 clk_rate;
 
-	clk_rate = get_clk_div_rate(baud, UART_OVERSAMPLING, &clk_div);
+	dp = dev_ofnode(dev);
+
+	if (ofnode_device_is_compatible(dp, "qcom,msm-geni-uart-v3-n-above"))
+		sampling_rate /= 2;
+
+	clk_rate = get_clk_div_rate(baud, sampling_rate, &clk_div);
 	geni_serial_set_clock_rate(dev, clk_rate);
 	geni_serial_baud(priv->base, clk_div, baud);
 
@@ -554,7 +561,10 @@ static int msm_serial_ofdata_to_platdata(struct udevice *dev)
 }
 
 static const struct udevice_id msm_serial_ids[] = {
-	{.compatible = "qcom,msm-geni-uart"}, {}};
+	{ .compatible = "qcom,msm-geni-uart" },
+	{ .compatible = "qcom,msm-geni-uart-v3-n-above" },
+	{ }
+};
 
 U_BOOT_DRIVER(serial_msm_geni) = {
 	.name = "serial_msm_geni",
