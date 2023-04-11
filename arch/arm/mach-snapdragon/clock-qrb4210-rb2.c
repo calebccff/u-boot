@@ -72,6 +72,29 @@ static const struct bcr_regs usb30_master_regs = {
 	.D = USB30_PRIM_MASTER_D,
 };
 
+static const struct bcr_regs sdhc1_regs = {
+	.cfg_rcgr = SDCC1_CFG_RCGR,
+	.cmd_rcgr = SDCC1_CMD_RCGR,
+	.M = SDCC1_M,
+	.N = SDCC1_N,
+	.D = SDCC1_D,
+};
+
+static const struct bcr_regs sdhc2_regs = {
+	.cfg_rcgr = SDCC2_CFG_RCGR,
+	.cmd_rcgr = SDCC2_CMD_RCGR,
+	.M = SDCC2_M,
+	.N = SDCC2_N,
+	.D = SDCC2_D,
+};
+
+static struct pll_vote_clk gpll0_vote_clk = {
+	.status = GPLL0_STATUS,
+	.status_bit = GPLL0_STATUS_ACTIVE,
+	.ena_vote = APCS_GPLL_ENA_VOTE,
+	.vote_bit = BIT(0),
+};
+
 const struct freq_tbl *qcom_find_freq(const struct freq_tbl *f, uint rate)
 {
 	if (!f)
@@ -126,6 +149,26 @@ ulong msm_set_rate(struct clk *clk, ulong rate)
 		break;
 	case GCC_AHB2PHY_USB_CLK:
 		clk_enable_cbc(priv->base + AHB2PHY_USB_CBCR);
+		break;
+	case GCC_SDCC1_APPS_CLK:
+		/* SDCC1: 200MHz */
+		clk_rcg_set_rate_mnd(priv->base, &sdhc1_regs, 4, 0, 0,
+				     CFG_CLK_SRC_GPLL0);
+		clk_enable_gpll0(priv->base, &gpll0_vote_clk);
+		clk_enable_cbc(priv->base + SDCC1_APPS_CBCR);
+		break;
+	case GCC_SDCC1_AHB_CLK:
+		clk_enable_cbc(priv->base + SDCC1_AHB_CBCR);
+		break;
+	case GCC_SDCC2_APPS_CLK:
+		/* SDCC2: 200MHz */
+		clk_rcg_set_rate_mnd(priv->base, &sdhc2_regs, 4, 0, 0,
+				     CFG_CLK_SRC_GPLL0);
+		clk_enable_gpll0(priv->base, &gpll0_vote_clk);
+		clk_enable_cbc(priv->base + SDCC2_APPS_CBCR);
+		break;
+	case GCC_SDCC2_AHB_CLK:
+		clk_enable_cbc(priv->base + SDCC2_AHB_CBCR);
 		break;
 	case GCC_QUPV3_WRAP0_S4_CLK: /* UART4 */
 		return clk_init_uart(priv, rate);
