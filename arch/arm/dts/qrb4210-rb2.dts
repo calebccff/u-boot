@@ -81,6 +81,9 @@
 				<&gcc GCC_SDCC1_AHB_CLK>;
 			bus-width = <8>;
 
+			resets = <&reset GCC_SDCC1_BCR>;
+
+			no-sd;
 			no-sdio;
 			non-removable;
 		};
@@ -92,7 +95,10 @@
 				<&gcc GCC_SDCC2_AHB_CLK>;
 			bus-width = <4>;
 
+			resets = <&reset GCC_SDCC2_BCR>;
+
 			no-sdio;
+			no-mmc;
 		};
 
 		usb_1_hsphy: phy@1613000 {
