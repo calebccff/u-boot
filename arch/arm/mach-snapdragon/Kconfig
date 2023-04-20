@@ -20,6 +20,19 @@ config LNX_KRNL_IMG_TEXT_OFFSET_BASE
 choice
 	prompt "Snapdragon board select"
 
+config TARGET_AXOLOTL
+	bool "SHIFT SHIFT6mq (axolotl)"
+	help
+	  Support for the SHIFT SHIFT6mq production phone. Features:
+	  - Qualcomm Snapdragon 845 SoC
+	  - 8GiB RAM
+	  - 128GiB UFS, uSD slot
+	  - WiFi, Bluetooth, GPS, and radio modem.
+	  - SuperSpeed capable type-c port with DisplayPort alt mode
+	  - 1080p 6" touch display
+	select MISC_INIT_R
+	select SDM845
+
 config TARGET_DRAGONBOARD410C
 	bool "96Boards Dragonboard 410C"
 	select BOARD_LATE_INIT

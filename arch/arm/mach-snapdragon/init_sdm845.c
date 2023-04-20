@@ -11,12 +11,49 @@
 #include <asm/system.h>
 #include <asm/gpio.h>
 #include <dm.h>
+#include <asm/io.h>
+#include <asm/psci.h>
+#include <linux/arm-smccc.h>
+#include <linux/psci.h>
 
 DECLARE_GLOBAL_DATA_PTR;
 
 int dram_init(void)
 {
 	return fdtdec_setup_mem_size_base();
+}
+
+int dram_init_banksize(void)
+{
+	return fdtdec_setup_memory_banksize();
+}
+
+static void show_psci_version(void)
+{
+	struct arm_smccc_res res;
+
+	arm_smccc_smc(ARM_PSCI_0_2_FN_PSCI_VERSION, 0, 0, 0, 0, 0, 0, 0, &res);
+
+	printf("PSCI:  v%ld.%ld\n",
+	       PSCI_VERSION_MAJOR(res.a0),
+		PSCI_VERSION_MINOR(res.a0));
+}
+
+#define ARM_SMMU_GR0_sCR0	(0x15000000UL)
+#define ARM_SMMU_sCR0_USFCFG	BIT(10)
+
+void set_smmu_bypass_mode(void)
+{
+	u32 reg = readl(ARM_SMMU_GR0_sCR0);
+	printf("%s: Checking SMMU config. Initial sCR0 reg value is 0x%x\n",
+		       __func__, reg);
+
+	/* bypass SMMU */
+	reg &= ~ARM_SMMU_sCR0_USFCFG;
+	writel(reg, ARM_SMMU_GR0_sCR0);
+
+	printf("%s: Setting SMMU in bypass mode. Writing 0x%x at 0x%lx\n", __func__,
+		       reg, ARM_SMMU_GR0_sCR0);
 }
 
 void reset_cpu(void)
@@ -26,6 +63,9 @@ void reset_cpu(void)
 
 __weak int board_init(void)
 {
+	show_psci_version();
+
+	set_smmu_bypass_mode();
 	return 0;
 }
 
