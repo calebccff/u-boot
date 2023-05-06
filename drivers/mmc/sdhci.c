@@ -709,12 +709,14 @@ static int sdhci_init(struct mmc *mmc)
 	struct sdhci_host *host = mmc->priv;
 #if CONFIG_IS_ENABLED(DM_MMC) && CONFIG_IS_ENABLED(DM_GPIO)
 	struct udevice *dev = mmc->dev;
-
+printf("Bhupesh, inside %s, at %d, Marker 1\n", __func__, __LINE__);
 	gpio_request_by_name(dev, "cd-gpios", 0,
 			     &host->cd_gpio, GPIOD_IS_IN);
+printf("Bhupesh, inside %s, at %d, Marker 2\n", __func__, __LINE__);
 #endif
 
 	sdhci_reset(host, SDHCI_RESET_ALL);
+printf("Bhupesh, inside %s, at %d, Marker 3\n", __func__, __LINE__);
 
 #if defined(CONFIG_FIXED_SDHCI_ALIGNED_BUFFER)
 	host->align_buffer = (void *)CONFIG_FIXED_SDHCI_ALIGNED_BUFFER;
@@ -734,17 +736,21 @@ static int sdhci_init(struct mmc *mmc)
 	}
 #endif
 
+printf("Bhupesh, inside %s, at %d, Marker 4\n", __func__, __LINE__);
 	sdhci_set_power(host, fls(mmc->cfg->voltages) - 1);
 
+printf("Bhupesh, inside %s, at %d, Marker 5\n", __func__, __LINE__);
 	if (host->ops && host->ops->get_cd)
 		host->ops->get_cd(host);
 
+printf("Bhupesh, inside %s, at %d, Marker 6\n", __func__, __LINE__);
 	/* Enable only interrupts served by the SD controller */
 	sdhci_writel(host, SDHCI_INT_DATA_MASK | SDHCI_INT_CMD_MASK,
 		     SDHCI_INT_ENABLE);
 	/* Mask all sdhci interrupt sources */
 	sdhci_writel(host, 0x0, SDHCI_SIGNAL_ENABLE);
 
+printf("Bhupesh, inside %s, at %d, Marker 7\n", __func__, __LINE__);
 	return 0;
 }
 
