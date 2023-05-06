@@ -208,6 +208,14 @@ config SPL_DM_REGULATOR_GPIO
 	This config enables implementation of driver-model regulator uclass
 	features for gpio regulators in SPL.
 
+config DM_REGULATOR_QCOM_SMD
+	bool "Enable Driver Model for Qualcomm SMD based REGULATOR"
+	depends on DM_REGULATOR
+	select DM_REGULATOR_COMMON
+	---help---
+	This config enables implementation of driver-model regulator uclass
+	features for SMD based regulators found on Qualcomm SoCs.
+
 config REGULATOR_RK8XX
 	bool "Enable driver for RK8XX regulators"
 	depends on DM_REGULATOR && PMIC_RK8XX
