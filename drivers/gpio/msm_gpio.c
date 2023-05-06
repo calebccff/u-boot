@@ -29,12 +29,17 @@ DECLARE_GLOBAL_DATA_PTR;
 
 struct msm_gpio_bank {
 	phys_addr_t base;
+	phys_addr_t east_base;
 };
 
 static int msm_gpio_direction_input(struct udevice *dev, unsigned int gpio)
 {
 	struct msm_gpio_bank *priv = dev_get_priv(dev);
-	phys_addr_t reg = priv->base + GPIO_CONFIG_OFF(gpio);
+	phys_addr_t reg;
+
+printf("Bhupesh, inside %s, at %d\n", __func__, __LINE__);
+	reg = priv->east_base + GPIO_CONFIG_OFF(gpio);
+printf("Bhupesh, inside %s, at %d, reg 0x%llx, gpio %d, east_base 0x%llx\n", __func__, __LINE__, reg, gpio, priv->east_base);
 
 	/* Disable OE bit */
 	clrsetbits_le32(reg, GPIO_OE_MASK, GPIO_OE_DISABLE);
@@ -48,7 +53,7 @@ static int msm_gpio_set_value(struct udevice *dev, unsigned gpio, int value)
 
 	value = !!value;
 	/* set value */
-	writel(value << GPIO_OUT, priv->base + GPIO_IN_OUT_OFF(gpio));
+		writel(value << GPIO_OUT, priv->east_base + GPIO_IN_OUT_OFF(gpio));
 
 	return 0;
 }
@@ -57,11 +62,15 @@ static int msm_gpio_direction_output(struct udevice *dev, unsigned gpio,
 				     int value)
 {
 	struct msm_gpio_bank *priv = dev_get_priv(dev);
-	phys_addr_t reg = priv->base + GPIO_CONFIG_OFF(gpio);
+	phys_addr_t reg;
+	phys_addr_t b = 0;
 
+printf("Bhupesh, inside %s, at %d\n", __func__, __LINE__);
+	b = priv->east_base;
+	reg = b + GPIO_CONFIG_OFF(gpio);
 	value = !!value;
 	/* set value */
-	writel(value << GPIO_OUT, priv->base + GPIO_IN_OUT_OFF(gpio));
+	writel(value << GPIO_OUT, b + GPIO_IN_OUT_OFF(gpio));
 	/* switch direction */
 	clrsetbits_le32(reg, GPIO_OE_MASK, GPIO_OE_ENABLE);
 
@@ -72,14 +81,17 @@ static int msm_gpio_get_value(struct udevice *dev, unsigned gpio)
 {
 	struct msm_gpio_bank *priv = dev_get_priv(dev);
 
-	return !!(readl(priv->base + GPIO_IN_OUT_OFF(gpio)) >> GPIO_IN);
+		return !!(readl(priv->east_base + GPIO_IN_OUT_OFF(gpio)) >> GPIO_IN);
 }
 
 static int msm_gpio_get_function(struct udevice *dev, unsigned offset)
 {
 	struct msm_gpio_bank *priv = dev_get_priv(dev);
+	phys_addr_t b;
 
-	if (readl(priv->base + GPIO_CONFIG_OFF(offset)) & GPIO_OE_ENABLE)
+		b = priv->east_base;
+
+	if (readl(b + GPIO_CONFIG_OFF(offset)) & GPIO_OE_ENABLE)
 		return GPIOF_OUTPUT;
 
 	return GPIOF_INPUT;
@@ -96,10 +108,20 @@ static const struct dm_gpio_ops gpio_msm_ops = {
 static int msm_gpio_probe(struct udevice *dev)
 {
 	struct msm_gpio_bank *priv = dev_get_priv(dev);
+	priv->base = 0;
+	priv->east_base = 0;
+	
+	priv->base = dev_read_addr_index(dev, 0);
+	priv->east_base = 0x00d00000;
 
-	priv->base = dev_read_addr(dev);
-
-	return priv->base == FDT_ADDR_T_NONE ? -EINVAL : 0;
+	if (priv->base == FDT_ADDR_T_NONE ||
+	    priv->east_base == FDT_ADDR_T_NONE)
+	      return -EINVAL;
+	
+	printf("priv->base addr (0x%llx)\n", priv->base);
+	printf("priv->east_base addr (0x%llx)\n", priv->east_base);
+       
+	return 0;
 }
 
 static int msm_gpio_of_to_plat(struct udevice *dev)
