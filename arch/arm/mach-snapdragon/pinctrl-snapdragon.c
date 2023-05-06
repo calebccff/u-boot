@@ -18,6 +18,7 @@
 
 struct msm_pinctrl_priv {
 	phys_addr_t base;
+	phys_addr_t east_base;
 	struct msm_pinctrl_data *data;
 };
 
@@ -58,8 +59,17 @@ static const char *msm_get_function_name(struct udevice *dev,
 static int msm_pinctrl_probe(struct udevice *dev)
 {
 	struct msm_pinctrl_priv *priv = dev_get_priv(dev);
+	ofnode dp;
 
-	priv->base = dev_read_addr(dev);
+	dp = dev_ofnode(dev);
+
+	if (ofnode_device_is_compatible(dp, "qcom,sm6115-pinctrl")) {
+		priv->base = dev_read_addr_index(dev, 0);
+		priv->east_base = 0x00d00000;
+	} else {
+		priv->base = dev_read_addr(dev);
+	}
+
 	priv->data = (struct msm_pinctrl_data *)dev->driver_data;
 
 	return priv->base == FDT_ADDR_T_NONE ? -EINVAL : 0;
@@ -76,10 +86,22 @@ static int msm_pinmux_set(struct udevice *dev, unsigned int pin_selector,
 			  unsigned int func_selector)
 {
 	struct msm_pinctrl_priv *priv = dev_get_priv(dev);
+	ofnode dp;
 
-	clrsetbits_le32(priv->base + GPIO_CONFIG_OFFSET(pin_selector),
-			TLMM_FUNC_SEL_MASK | TLMM_GPIO_DISABLE,
-			priv->data->get_function_mux(func_selector) << 2);
+	dp = dev_ofnode(dev);
+
+	if (ofnode_device_is_compatible(dp, "qcom,sm6115-pinctrl") && (func_selector == 1)) {
+		printf("Bhupesh, inside %s, func_selector %u\n", __func__, func_selector);	
+		clrsetbits_le32(priv->east_base + GPIO_CONFIG_OFFSET(pin_selector),
+				TLMM_FUNC_SEL_MASK | TLMM_GPIO_DISABLE,
+				priv->data->get_function_mux(func_selector) << 2);
+	} else {
+		printf("Bhupesh, inside %s, func_selector %u\n", __func__, func_selector);	
+		clrsetbits_le32(priv->base + GPIO_CONFIG_OFFSET(pin_selector),
+				TLMM_FUNC_SEL_MASK | TLMM_GPIO_DISABLE,
+				priv->data->get_function_mux(func_selector) << 2);
+	}
+
 	return 0;
 }
 
