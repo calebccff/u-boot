@@ -201,7 +201,8 @@
 
 		tlmm: pinctrl_west@500000 {
 			compatible = "qcom,sm6115-pinctrl";
-			reg = <0x00500000 0x400000>;
+			reg = <0x00500000 0x400000>,
+			      <0x00d00000 0x400000>;
 			gpio-count = <114>;
 			gpio-controller;
 			#gpio-cells = <2>;
