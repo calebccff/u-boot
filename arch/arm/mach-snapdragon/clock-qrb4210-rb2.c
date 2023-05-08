@@ -147,6 +147,12 @@ ulong msm_set_rate(struct clk *clk, ulong rate)
 	case GCC_USB3_PRIM_CLKREF_CLK:
 		clk_enable_cbc(priv->base + USB3_PRIM_CLKREF_EN);
 		break;
+	case GCC_USB3_PRIM_PHY_COM_AUX_CLK:
+		clk_enable_cbc(priv->base + USB3_PRIM_PHY_COM_AUX_CLK);
+		break;
+	case GCC_USB3_PRIM_PHY_PIPE_CLK:
+		clk_enable_cbc(priv->base + USB3_PRIM_PHY_PIPE_CLK);
+		break;
 	case GCC_AHB2PHY_USB_CLK:
 		clk_enable_cbc(priv->base + AHB2PHY_USB_CBCR);
 		break;
