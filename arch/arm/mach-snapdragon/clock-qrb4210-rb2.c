@@ -157,8 +157,8 @@ ulong msm_set_rate(struct clk *clk, ulong rate)
 		clk_enable_cbc(priv->base + AHB2PHY_USB_CBCR);
 		break;
 	case GCC_SDCC1_APPS_CLK:
-		/* SDCC1: 200MHz */
-		clk_rcg_set_rate_mnd(priv->base, &sdhc1_regs, 4, 0, 0,
+		/* SDCC1: 400000 */
+		clk_rcg_set_rate_mnd(priv->base, &sdhc1_regs, 12, 1, 4,
 				     CFG_CLK_SRC_GPLL0);
 		clk_enable_gpll0(priv->base, &gpll0_vote_clk);
 		clk_enable_cbc(priv->base + SDCC1_APPS_CBCR);
@@ -167,8 +167,8 @@ ulong msm_set_rate(struct clk *clk, ulong rate)
 		clk_enable_cbc(priv->base + SDCC1_AHB_CBCR);
 		break;
 	case GCC_SDCC2_APPS_CLK:
-		/* SDCC2: 200MHz */
-		clk_rcg_set_rate_mnd(priv->base, &sdhc2_regs, 4, 0, 0,
+		/* SDCC2: 400000 */
+		clk_rcg_set_rate_mnd(priv->base, &sdhc2_regs, 12, 1, 4,
 				     CFG_CLK_SRC_GPLL0);
 		clk_enable_gpll0(priv->base, &gpll0_vote_clk);
 		clk_enable_cbc(priv->base + SDCC2_APPS_CBCR);
