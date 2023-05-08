@@ -5,18 +5,25 @@
  * Based on Linux driver
  */
 
+#include <clk.h>
+#include <clk-uclass.h>
 #include <common.h>
 #include <dm.h>
+#include <dm/device_compat.h>
+#include <dm/devres.h>
 #include <generic-phy.h>
-#include <linux/bitops.h>
-#include <asm/io.h>
+#include <malloc.h>
 #include <reset.h>
-#include <clk.h>
+
+#include <asm/io.h>
+#include <linux/bitops.h>
+#include <linux/clk-provider.h>
 #include <linux/delay.h>
 #include <linux/iopoll.h>
 
 #include "phy-qcom-qmp.h"
 #include "phy-qcom-qmp-pcs-misc-v3.h"
+#include <dt-bindings/clock/qcom,gcc-sm6115.h>
 
 /* QPHY_SW_RESET bit */
 #define SW_RESET				BIT(0)
@@ -53,7 +60,7 @@
 /* QPHY_V3_PCS_MISC_CLAMP_ENABLE register bits */
 #define CLAMP_EN				BIT(0) /* enables i/o clamp_n */
 
-#define PHY_INIT_COMPLETE_TIMEOUT		10000
+#define PHY_INIT_COMPLETE_TIMEOUT		(200 * 10000)
 
 struct qmp_phy_init_tbl {
 	unsigned int offset;
@@ -262,11 +269,13 @@ struct qmp_phy_priv {
 
 	void __iomem *dp_com;
 
+	struct clk *fixed_clk;
 	struct clk *pipe_clk;
-	unsigned long pipe_clk_rate;
-	struct clk_bulk clks;
+	struct clk *clks;
+	unsigned int clk_count;
 
-	struct reset_ctl_bulk resets;
+	struct reset_ctl *resets;
+	unsigned int reset_count;
 
 	const struct qmp_phy_cfg *cfg;
 };
@@ -417,17 +426,21 @@ static int qmp_usb_init(struct phy *phy)
 
 static int qmp_phy_do_reset(struct qmp_phy_priv *qmp)
 {
-	int ret;
+	int i, ret;
 
-	ret = reset_assert_bulk(&qmp->resets);
-	if (ret)
-		return ret;
+	for (i = 0; i < qmp->reset_count; i++) {
+		ret = reset_assert(&qmp->resets[i]);
+		if (ret)
+			return ret;
+	}
 
 	udelay(10);
 
-	ret = reset_deassert_bulk(&qmp->resets);
-	if (ret)
-		return ret;
+	for (i = 0; i < qmp->reset_count; i++) {
+		ret = reset_deassert(&qmp->resets[i]);
+		if (ret)
+			return ret;
+	}
 
 	return 0;
 }
@@ -443,12 +456,14 @@ static int qmp_phy_power_on(struct phy *phy)
 	unsigned int val;
 	int ret;
 
+printf("Bhupesh, inside %s, at %d, Marker A\n", __func__, __LINE__);
 	ret = qmp_phy_do_reset(qmp);
 	if (ret)
 		return ret;
 	
 	qmp_usb_serdes_init(qmp);
 
+printf("Bhupesh, inside %s, at %d, Marker B\n", __func__, __LINE__);
 	ret = clk_prepare_enable(qmp->pipe_clk);
 	if (ret)
 		return ret;
@@ -473,15 +488,20 @@ static int qmp_phy_power_on(struct phy *phy)
 	/* start SerDes and Phy-Coding-Sublayer */
 	qphy_setbits(pcs, cfg->regs[QPHY_START_CTRL], SERDES_START | PCS_START);
 
+printf("Bhupesh, inside %s, at %d, Marker C\n", __func__, __LINE__);
 	status = pcs + cfg->regs[QPHY_PCS_STATUS];
 	ret = readl_poll_timeout(status, val, !(val & PHYSTATUS), PHY_INIT_COMPLETE_TIMEOUT);
+printf("Bhupesh, inside %s, at %d, Marker C minor, status=0x%p, \n"
+		"val=0x%x !(val & PHYSTATUS)=%d\n", __func__, __LINE__, status, val, !(val & PHYSTATUS));
 	if (ret)
 		return ret;
 
+printf("Bhupesh, inside %s, at %d, Marker D\n", __func__, __LINE__);
 	ret = qmp_usb_init(phy);
 	if (ret)
 		return ret;
 
+printf("Bhupesh, inside %s, at %d, Marker E\n", __func__, __LINE__);
 	return 0;
 }
 
@@ -503,29 +523,68 @@ static int qmp_phy_power_off(struct phy *phy)
 
 	clk_disable_unprepare(qmp->pipe_clk);
 
-	clk_disable_bulk(&qmp->clks);
-	clk_release_bulk(&qmp->clks);
+	clk_release_all(qmp->clks, qmp->clk_count);
 
 	return 0;
 }
 
-static int qmp_phy_clk_init(struct udevice *dev, struct qmp_phy_priv *phy)
+static int qmp_phy_reset_init(struct udevice *dev, struct qmp_phy_priv *qmp)
 {
-	int ret;
+	const struct qmp_phy_cfg *cfg = qmp->cfg;
+	int num = cfg->num_resets;
+	int i, ret;
 
-	ret = clk_get_bulk(dev, &phy->clks);
-	if (ret == -ENOSYS || ret == -ENOENT)
-		return 0;
-	if (ret)
-		return ret;
+	qmp->reset_count = 0;
+	qmp->resets = devm_kcalloc(dev, num, sizeof(*qmp->resets), GFP_KERNEL);
+	if (!qmp->resets)
+		return -ENOMEM;
 
-	ret = clk_enable_bulk(&phy->clks);
-	if (ret) {
-		clk_release_bulk(&phy->clks);
-		return ret;
+	for (i = 0; i < num; i++) {
+		ret = reset_get_by_index(dev, i, &qmp->resets[i]);
+		if (ret < 0)
+			goto reset_get_err;
+
+		++qmp->reset_count;
 	}
 
 	return 0;
+
+reset_get_err:
+	ret = reset_release_all(qmp->resets, qmp->reset_count);
+	if (ret)
+		debug("failed to disable all resets\n");
+
+	return ret;
+}
+
+
+static int qmp_phy_clk_init(struct udevice *dev, struct qmp_phy_priv *qmp)
+{
+	const struct qmp_phy_cfg *cfg = qmp->cfg;
+	int num = cfg->num_clks;
+	int i, ret;
+
+	qmp->clk_count = 0;
+	qmp->clks = devm_kcalloc(dev, num, sizeof(*qmp->clks), GFP_KERNEL);
+	if (!qmp->clks)
+		return -ENOMEM;
+
+	for (i = 0; i < num; i++) {
+		ret = clk_get_by_index(dev, i, &qmp->clks[i]);
+		if (ret < 0)
+			goto clk_get_err;
+
+		++qmp->clk_count;
+	}
+
+	return 0;
+
+clk_get_err:
+	ret = clk_release_all(qmp->clks, qmp->clk_count);
+	if (ret)
+		debug("failed to disable all clocks\n");
+
+	return ret;
 }
 
 /*
@@ -551,22 +610,26 @@ static int qmp_phy_probe(struct udevice *dev)
 	struct qmp_phy_priv *qmp = dev_get_priv(dev);
 	int ret;
 
+printf("Bhupesh, inside %s, at %d, Marker 1\n", __func__, __LINE__);
 	qmp->base = (void __iomem *)dev_read_addr(dev);
 	if (IS_ERR(qmp->base))
 		return PTR_ERR(qmp->base);
-
-	ret = qmp_phy_clk_init(dev, qmp);
-	if (ret)
-		return ret;
-
-	ret = reset_get_bulk(dev, &qmp->resets);
-	if (ret)
-		return ret;
 
 	qmp->cfg = (const struct qmp_phy_cfg *)dev_get_driver_data(dev);
 	if (!qmp->cfg)
 		return -EINVAL;
 
+printf("Bhupesh, inside %s, at %d, Marker 2\n", __func__, __LINE__);
+	ret = qmp_phy_clk_init(dev, qmp);
+	if (ret)
+		return ret;
+
+printf("Bhupesh, inside %s, at %d, Marker 2b\n", __func__, __LINE__);
+	ret = qmp_phy_reset_init(dev, qmp);
+	if (ret)
+		return ret;
+
+printf("Bhupesh, inside %s, at %d, Marker 3\n", __func__, __LINE__);
 	qmp->serdes = qmp->base + qmp->cfg->offsets->serdes;
 	qmp->pcs = qmp->base + qmp->cfg->offsets->pcs;
 	qmp->pcs_misc = qmp->base + qmp->cfg->offsets->pcs_misc;
@@ -579,11 +642,13 @@ static int qmp_phy_probe(struct udevice *dev)
 		qmp->rx2 = qmp->base + qmp->cfg->offsets->rx2;
 	}
 
-	clk_get_by_name(dev, "pipe", qmp->pipe_clk);
-	
+printf("Bhupesh, inside %s, at %d, Marker 4\n", __func__, __LINE__);
 	/* controllers using QMP phys use 125MHz pipe clock interface */
-	clk_set_rate(qmp->pipe_clk, 125000000);
+	qmp->fixed_clk = clk_register_fixed_rate(NULL, "usb3_phy_pipe_clk_src", 125000000UL);
+	if (!qmp->fixed_clk)
+		return -EINVAL;
 
+printf("Bhupesh, inside %s, at %d, Marker 5\n", __func__, __LINE__);
 	return 0;
 }
 
