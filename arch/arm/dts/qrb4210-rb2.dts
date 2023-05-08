@@ -348,6 +348,12 @@
 			no-sd;
 			no-sdio;
 			non-removable;
+
+			mmc-ddr-1_8v;
+			mmc-hs200-1_8v;
+			mmc-hs400-1_8v;
+			mmc-hs400-enhanced-strobe;
+			max-frequency = <192000000>;
 		};
 
 		sdhc_2: mmc@4784000 {
@@ -367,6 +373,9 @@
 			pinctrl-0 = <&sdc2_state_on &sdc2_card_det_n>;
 
 			no-mmc;
+			no-sdio;
+			max-frequency = <202000000>;
+
 		};
 
 		usb_hsphy: phy@1613000 {
