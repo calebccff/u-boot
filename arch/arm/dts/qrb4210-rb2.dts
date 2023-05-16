@@ -40,6 +40,11 @@
 		regulator-boot-on;
 	};
 
+	qusb2_hstx_trim: hstx-trim@25b {
+		reg = <0x25b 0x1>;
+		bits = <1 4>;
+	};
+
 	regulators {
 		compatible = "qcom,rpm-pm6125-regulators";
 
@@ -199,10 +204,19 @@
 		ranges = <0 0 0 0xffffffff>;
 		compatible = "simple-bus";
 
+		usb_qmp_pipe_clk_125mhz: pipe-clk-125mhz {
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <125000000>;
+			clock-output-names = "usb3_phy_pipe_clk_src";
+		};
+
 		tlmm: pinctrl_west@500000 {
 			compatible = "qcom,sm6115-pinctrl";
 			reg = <0x00500000 0x400000>,
+			      <0x00900000 0x400000>,
 			      <0x00d00000 0x400000>;
+			reg-names = "west", "south", "east";
 			gpio-count = <114>;
 			gpio-controller;
 			#gpio-cells = <2>;
@@ -308,6 +322,20 @@
 				pins = "GPIO_88";
 				function = "gpio";
 			};
+
+			usb_hub_reset_pm: usb-hub-reset-pm {
+				pins = "GPIO_37";
+				function = "gpio";
+				output-high;
+				drive-strength = <10>;
+			};
+
+			usb_sw_sel_pm: usb-sw-sel-pm {
+				pins = "GPIO_89";
+				function = "gpio";
+				output-high;
+				drive-strength = <10>;
+			};
 		};
 
 		gcc: clock-controller@1400000 {
@@ -375,7 +403,6 @@
 			no-mmc;
 			no-sdio;
 			max-frequency = <202000000>;
-
 		};
 
 		usb_hsphy: phy@1613000 {
@@ -388,6 +415,9 @@
 
 			resets = <&reset GCC_QUSB2PHY_PRIM_BCR>;
 			reset-names = "phy";
+
+			//qusb-nvmem-cells = <&qusb2_hstx_trim>;
+			//nvmem-cell-names = "qusb-nvmem-cells";
 		};
 
 		usb_qmpphy: phy@1615000 {
@@ -397,7 +427,8 @@
 			clocks = <&gcc GCC_AHB2PHY_USB_CLK>,
 				 <&gcc GCC_USB3_PRIM_CLKREF_CLK>,
 				 <&gcc GCC_USB3_PRIM_PHY_COM_AUX_CLK>,
-				 <&gcc GCC_USB3_PRIM_PHY_PIPE_CLK>;
+				 <&usb_qmp_pipe_clk_125mhz>;
+				 //<&gcc GCC_USB3_PRIM_PHY_PIPE_CLK>;
 			clock-names = "cfg_ahb",
 				      "ref",
 				      "com_aux",
@@ -407,14 +438,14 @@
 				 <&reset GCC_USB3PHY_PHY_PRIM_SP0_BCR>;
 			reset-names = "phy", "phy_phy";
 
-			#clock-cells = <0>;
-			clock-output-names = "usb3_phy_pipe_clk_src";
+			//#clock-cells = <0>;
+			//clock-output-names = "usb3_phy_pipe_clk_src";
 
 			#phy-cells = <0>;
 		};
 
 		usb: usb@4ef8800 {
-			compatible = "com,sm6115-dwc3", "qcom,dwc3";
+			compatible = "qcom,sm6115-dwc3", "qcom,dwc3";
 			reg = <0x04ef8800 0x400>;
 			#address-cells = <1>;
 			#size-cells = <1>;
@@ -436,6 +467,9 @@
 			power-domains = <&gcc GCC_USB30_PRIM_GDSC>;
 			qcom,select-utmi-as-pipe-clk;
 
+			pinctrl-names = "default";
+			pinctrl-0 = <&usb_hub_reset_pm &usb_sw_sel_pm>;
+
 			usb_dwc3: usb@4e00000 {
 				compatible = "snps,dwc3";
 				reg = <0x04e00000 0xcd00>;
@@ -453,22 +487,21 @@
 
 		spmi@1c40000 {
 			compatible = "qcom,spmi-pmic-arb";
-			reg = <0x01c0a000 0x26000>,
-			      <0x01c40000 0x1100>,
+			reg = <0x01c40000 0x1100>,
+			      <0x01e00000 0x2000000>,
 			      <0x03e00000 0x100000>;
-			reg-names = "cnfg", "core", "obsrvr";
 			#address-cells = <1>;
-			#size-cells = <0>;
+			#size-cells = <1>;
 
 			pm6125: pm6125@0 {
 				compatible = "qcom,spmi-pmic";
 				reg = <0x0 0x1>;
 				#address-cells = <1>;
-				#size-cells = <0>;
+				#size-cells = <1>;
 
 				pm6125_gpios: pm6125_gpios@c000 {
 					compatible = "qcom,pm6125-gpio";
-					reg = <0xc000>;
+					reg = <0xc000 0x400>;
 					gpio-controller;
 					gpio-count = <9>;
 					#gpio-cells = <2>;
