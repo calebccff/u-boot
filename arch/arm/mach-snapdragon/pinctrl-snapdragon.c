@@ -17,8 +17,9 @@
 #include "pinctrl-snapdragon.h"
 
 struct msm_pinctrl_priv {
-	phys_addr_t base;
+	phys_addr_t west_base;
 	phys_addr_t east_base;
+	phys_addr_t south_base;
 	struct msm_pinctrl_data *data;
 };
 
@@ -59,20 +60,23 @@ static const char *msm_get_function_name(struct udevice *dev,
 static int msm_pinctrl_probe(struct udevice *dev)
 {
 	struct msm_pinctrl_priv *priv = dev_get_priv(dev);
-	ofnode dp;
 
-	dp = dev_ofnode(dev);
-
-	if (ofnode_device_is_compatible(dp, "qcom,sm6115-pinctrl")) {
-		priv->base = dev_read_addr_index(dev, 0);
-		priv->east_base = 0x00d00000;
-	} else {
-		priv->base = dev_read_addr(dev);
-	}
+	priv->west_base = dev_read_addr_index(dev, 0);
+	priv->south_base = dev_read_addr_index(dev, 1);
+	priv->east_base = dev_read_addr_index(dev, 2);
 
 	priv->data = (struct msm_pinctrl_data *)dev->driver_data;
 
-	return priv->base == FDT_ADDR_T_NONE ? -EINVAL : 0;
+	if (priv->west_base == FDT_ADDR_T_NONE ||
+	    priv->east_base == FDT_ADDR_T_NONE ||
+	    priv->south_base == FDT_ADDR_T_NONE)
+		return -EINVAL;
+
+	dev_dbg(dev, "priv->west_base (%llu)\n", priv->west_base);
+	dev_dbg(dev, "priv->east_base (%llu)\n", priv->east_base);
+	dev_dbg(dev, "priv->south_base (%llu)\n", priv->south_base);
+
+	return 0;
 }
 
 static const char *msm_get_pin_name(struct udevice *dev, unsigned int selector)
@@ -86,21 +90,18 @@ static int msm_pinmux_set(struct udevice *dev, unsigned int pin_selector,
 			  unsigned int func_selector)
 {
 	struct msm_pinctrl_priv *priv = dev_get_priv(dev);
-	ofnode dp;
+	phys_addr_t base;
 
-	dp = dev_ofnode(dev);
+	// FIXME: Hack in place
+	if ((pin_selector == 12) || (pin_selector == 13) || (pin_selector == 89)) // west
+		base = priv->west_base;
 
-	if (ofnode_device_is_compatible(dp, "qcom,sm6115-pinctrl") && (func_selector == 1)) {
-		printf("Bhupesh, inside %s, func_selector %u\n", __func__, func_selector);	
-		clrsetbits_le32(priv->east_base + GPIO_CONFIG_OFFSET(pin_selector),
-				TLMM_FUNC_SEL_MASK | TLMM_GPIO_DISABLE,
-				priv->data->get_function_mux(func_selector) << 2);
-	} else {
-		printf("Bhupesh, inside %s, func_selector %u\n", __func__, func_selector);	
-		clrsetbits_le32(priv->base + GPIO_CONFIG_OFFSET(pin_selector),
-				TLMM_FUNC_SEL_MASK | TLMM_GPIO_DISABLE,
-				priv->data->get_function_mux(func_selector) << 2);
-	}
+	if (pin_selector == 37) //east
+		base = priv->east_base;
+
+	clrsetbits_le32(base + GPIO_CONFIG_OFFSET(pin_selector),
+			TLMM_FUNC_SEL_MASK | TLMM_GPIO_DISABLE,
+			priv->data->get_function_mux(func_selector) << 2);
 
 	return 0;
 }
@@ -109,19 +110,27 @@ static int msm_pinconf_set(struct udevice *dev, unsigned int pin_selector,
 			   unsigned int param, unsigned int argument)
 {
 	struct msm_pinctrl_priv *priv = dev_get_priv(dev);
+	phys_addr_t base;
+
+	// FIXME: Hack in place
+	if ((pin_selector == 12) || (pin_selector == 13) || (pin_selector == 89)) // west
+		base = priv->west_base;
+
+	if (pin_selector == 37) //east
+		base = priv->east_base;
 
 	switch (param) {
 	case PIN_CONFIG_DRIVE_STRENGTH:
 		argument = (argument / 2) - 1;
-		clrsetbits_le32(priv->base + GPIO_CONFIG_OFFSET(pin_selector),
+		clrsetbits_le32(base + GPIO_CONFIG_OFFSET(pin_selector),
 				TLMM_DRV_STRENGTH_MASK, argument << 6);
 		break;
 	case PIN_CONFIG_BIAS_DISABLE:
-		clrbits_le32(priv->base + GPIO_CONFIG_OFFSET(pin_selector),
+		clrbits_le32(base + GPIO_CONFIG_OFFSET(pin_selector),
 			     TLMM_GPIO_PULL_MASK);
 		break;
 	case PIN_CONFIG_BIAS_PULL_UP:
-		clrsetbits_le32(priv->base + GPIO_CONFIG_OFFSET(pin_selector),
+		clrsetbits_le32(base + GPIO_CONFIG_OFFSET(pin_selector),
 				TLMM_GPIO_PULL_MASK, argument);
 		break;
 	default:
