@@ -280,16 +280,38 @@ struct qmp_phy_priv {
 	const struct qmp_phy_cfg *cfg;
 };
 
+/* Enable DEBUG_QMP to trace qmp reg read/write */
+#ifdef DEBUG_QMP
+static unsigned int writel_count = 0;
+static unsigned int readl_count = 0;
+#endif
+
 static inline void qphy_setbits(void __iomem *base, u32 offset, u32 val)
 {
 	u32 reg;
 
 	reg = readl(base + offset);
+
+#ifdef DEBUG_QMP
+	debug_qmp("%s: readl_cnt=%u, reg=0x%p, val=0x%x\n",
+			__func__, readl_count++, base + offset, reg);
+#endif
+
 	reg |= val;
 	writel(reg, base + offset);
 
+#ifdef DEBUG_QMP
+	debug_qmp("%s: writel_cnt=%u, reg=0x%p, val=0x%x\n",
+			__func__, writel_count++, base + offset, reg);
+#endif
+
 	/* ensure that above write is through */
-	readl(base + offset);
+	reg = readl(base + offset);
+
+#ifdef DEBUG_QMP
+	debug_qmp("%s: readl_cnt=%u, reg=0x%p, val=0x%x\n",
+			__func__, readl_count++, base + offset, reg);
+#endif
 }
 
 static inline void qphy_clrbits(void __iomem *base, u32 offset, u32 val)
@@ -297,11 +319,27 @@ static inline void qphy_clrbits(void __iomem *base, u32 offset, u32 val)
 	u32 reg;
 
 	reg = readl(base + offset);
+
+#ifdef DEBUG_QMP
+	debug_qmp("%s: readl_cnt=%u, reg=0x%p, val=0x%x\n",
+			__func__, readl_count++, base + offset, reg);
+#endif
+
 	reg &= ~val;
 	writel(reg, base + offset);
 
+#ifdef DEBUG_QMP
+	debug_qmp("%s: writel_cnt=%u, reg=0x%p, val=0x%x\n",
+			__func__, writel_count++, base + offset, reg);
+#endif
+
 	/* ensure that above write is through */
-	readl(base + offset);
+	reg = readl(base + offset);
+
+#ifdef DEBUG_QMP
+	debug_qmp("%s: readl_cnt=%u, reg=0x%p, val=0x%x\n",
+			__func__, readl_count++, base + offset, reg);
+#endif
 }
 
 /* list of clocks required by phy */
@@ -367,6 +405,11 @@ static void qmp_usb_configure_lane(void __iomem *base,
 			continue;
 
 		writel(t->val, base + t->offset);
+
+#ifdef DEBUG_QMP
+		debug_qmp("%s: writel_cnt=%u, reg=0x%p, val=0x%x\n",
+				__func__, writel_count++, base + t->offset, t->val);
+#endif
 	}
 }
 
@@ -456,14 +499,16 @@ static int qmp_phy_power_on(struct phy *phy)
 	unsigned int val;
 	int ret;
 
-printf("Bhupesh, inside %s, at %d, Marker A\n", __func__, __LINE__);
 	ret = qmp_phy_do_reset(qmp);
 	if (ret)
 		return ret;
 	
+	ret = qmp_usb_init(phy);
+	if (ret)
+		return ret;
+
 	qmp_usb_serdes_init(qmp);
 
-printf("Bhupesh, inside %s, at %d, Marker B\n", __func__, __LINE__);
 	ret = clk_prepare_enable(qmp->pipe_clk);
 	if (ret)
 		return ret;
@@ -488,20 +533,11 @@ printf("Bhupesh, inside %s, at %d, Marker B\n", __func__, __LINE__);
 	/* start SerDes and Phy-Coding-Sublayer */
 	qphy_setbits(pcs, cfg->regs[QPHY_START_CTRL], SERDES_START | PCS_START);
 
-printf("Bhupesh, inside %s, at %d, Marker C\n", __func__, __LINE__);
 	status = pcs + cfg->regs[QPHY_PCS_STATUS];
 	ret = readl_poll_timeout(status, val, !(val & PHYSTATUS), PHY_INIT_COMPLETE_TIMEOUT);
-printf("Bhupesh, inside %s, at %d, Marker C minor, status=0x%p, \n"
-		"val=0x%x !(val & PHYSTATUS)=%d\n", __func__, __LINE__, status, val, !(val & PHYSTATUS));
 	if (ret)
 		return ret;
 
-printf("Bhupesh, inside %s, at %d, Marker D\n", __func__, __LINE__);
-	ret = qmp_usb_init(phy);
-	if (ret)
-		return ret;
-
-printf("Bhupesh, inside %s, at %d, Marker E\n", __func__, __LINE__);
 	return 0;
 }
 
@@ -557,7 +593,6 @@ reset_get_err:
 	return ret;
 }
 
-
 static int qmp_phy_clk_init(struct udevice *dev, struct qmp_phy_priv *qmp)
 {
 	const struct qmp_phy_cfg *cfg = qmp->cfg;
@@ -573,6 +608,13 @@ static int qmp_phy_clk_init(struct udevice *dev, struct qmp_phy_priv *qmp)
 		ret = clk_get_by_index(dev, i, &qmp->clks[i]);
 		if (ret < 0)
 			goto clk_get_err;
+
+		ret = clk_enable(&qmp->clks[i]);
+		if (ret && ret != -ENOSYS) {
+			debug("failed to enable clock %d\n", i);
+			clk_free(&qmp->clks[i]);
+			goto clk_get_err;
+		}
 
 		++qmp->clk_count;
 	}
@@ -610,7 +652,6 @@ static int qmp_phy_probe(struct udevice *dev)
 	struct qmp_phy_priv *qmp = dev_get_priv(dev);
 	int ret;
 
-printf("Bhupesh, inside %s, at %d, Marker 1\n", __func__, __LINE__);
 	qmp->base = (void __iomem *)dev_read_addr(dev);
 	if (IS_ERR(qmp->base))
 		return PTR_ERR(qmp->base);
@@ -619,17 +660,14 @@ printf("Bhupesh, inside %s, at %d, Marker 1\n", __func__, __LINE__);
 	if (!qmp->cfg)
 		return -EINVAL;
 
-printf("Bhupesh, inside %s, at %d, Marker 2\n", __func__, __LINE__);
 	ret = qmp_phy_clk_init(dev, qmp);
 	if (ret)
 		return ret;
 
-printf("Bhupesh, inside %s, at %d, Marker 2b\n", __func__, __LINE__);
 	ret = qmp_phy_reset_init(dev, qmp);
 	if (ret)
 		return ret;
 
-printf("Bhupesh, inside %s, at %d, Marker 3\n", __func__, __LINE__);
 	qmp->serdes = qmp->base + qmp->cfg->offsets->serdes;
 	qmp->pcs = qmp->base + qmp->cfg->offsets->pcs;
 	qmp->pcs_misc = qmp->base + qmp->cfg->offsets->pcs_misc;
@@ -642,13 +680,11 @@ printf("Bhupesh, inside %s, at %d, Marker 3\n", __func__, __LINE__);
 		qmp->rx2 = qmp->base + qmp->cfg->offsets->rx2;
 	}
 
-printf("Bhupesh, inside %s, at %d, Marker 4\n", __func__, __LINE__);
 	/* controllers using QMP phys use 125MHz pipe clock interface */
-	qmp->fixed_clk = clk_register_fixed_rate(NULL, "usb3_phy_pipe_clk_src", 125000000UL);
-	if (!qmp->fixed_clk)
-		return -EINVAL;
+	qmp->pipe_clk = devm_clk_get(dev, "pipe");
+	if (IS_ERR(qmp->pipe_clk))
+		return PTR_ERR(qmp->pipe_clk);
 
-printf("Bhupesh, inside %s, at %d, Marker 5\n", __func__, __LINE__);
 	return 0;
 }
 
