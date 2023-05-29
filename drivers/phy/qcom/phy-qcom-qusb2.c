@@ -10,6 +10,7 @@
 #include <generic-phy.h>
 #include <linux/bitops.h>
 #include <asm/io.h>
+#include <nvmem.h>
 #include <reset.h>
 #include <clk.h>
 #include <linux/delay.h>
@@ -216,10 +217,16 @@ struct qusb2_phy {
 	struct clk *iface_clk;
 	struct clk_bulk clks;
 	struct reset_ctl phy_rst;
+	struct nvmem_cell cell;
 
 	const struct qusb2_phy_cfg *cfg;
 	bool has_se_clk_scheme;
 };
+
+#ifdef DEBUG_QUSB2
+static unsigned int writel_count = 0;
+static unsigned int readl_count = 0;
+#endif
 
 static inline void qusb2_write_mask(void __iomem *base, u32 offset,
 				    u32 val, u32 mask)
@@ -227,12 +234,28 @@ static inline void qusb2_write_mask(void __iomem *base, u32 offset,
 	u32 reg;
 
 	reg = readl(base + offset);
+
+#ifdef DEBUG_QUSB2
+	debug_qusb2("%s: readl_cnt=%u, reg=0x%p, val=0x%x\n",
+			__func__, readl_count++, base + offset, reg);
+#endif
+
 	reg &= ~mask;
 	reg |= val & mask;
 	writel(reg, base + offset);
 
+#ifdef DEBUG_QUSB2
+	debug_qusb2("%s: writel_cnt=%u, reg=0x%p, val=0x%x\n",
+			__func__, writel_count++, base + offset, reg);
+#endif
+
 	/* Ensure above write is completed */
-	readl(base + offset);
+	reg = readl(base + offset);
+
+#ifdef DEBUG_QUSB2
+	debug_qusb2("%s: readl_cnt=%u, reg=0x%p, val=0x%x\n",
+			__func__, readl_count++, base + offset, reg);
+#endif
 }
 
 static inline void qusb2_setbits(void __iomem *base, u32 offset, u32 val)
@@ -240,11 +263,27 @@ static inline void qusb2_setbits(void __iomem *base, u32 offset, u32 val)
 	u32 reg;
 
 	reg = readl(base + offset);
+
+#ifdef DEBUG_QUSB2
+	debug_qusb2("%s: readl_cnt=%u, reg=0x%p, val=0x%x\n",
+			__func__, readl_count++, base + offset, reg);
+#endif
+
 	reg |= val;
 	writel(reg, base + offset);
 
+#ifdef DEBUG_QUSB2
+	debug_qusb2("%s: writel_cnt=%u, reg=0x%p, val=0x%x\n",
+			__func__, writel_count++, base + offset, reg);
+#endif
+
 	/* Ensure above write is completed */
-	readl(base + offset);
+	reg = readl(base + offset);
+
+#ifdef DEBUG_QUSB2
+	debug_qusb2("%s: readl_cnt=%u, reg=0x%p, val=0x%x\n",
+			__func__, readl_count++, base + offset, reg);
+#endif
 }
 
 static inline void qusb2_clrbits(void __iomem *base, u32 offset, u32 val)
@@ -252,11 +291,27 @@ static inline void qusb2_clrbits(void __iomem *base, u32 offset, u32 val)
 	u32 reg;
 
 	reg = readl(base + offset);
+
+#ifdef DEBUG_QUSB2
+	debug_qusb2("%s: readl_cnt=%u, reg=0x%p, val=0x%x\n",
+			__func__, readl_count++, base + offset, reg);
+#endif
+
 	reg &= ~val;
 	writel(reg, base + offset);
 
+#ifdef DEBUG_QUSB2
+	debug_qusb2("%s: writel_cnt=%u, reg=0x%p, val=0x%x\n",
+			__func__, writel_count++, base + offset, reg);
+#endif
+
 	/* Ensure above write is completed */
-	readl(base + offset);
+	reg = readl(base + offset);
+
+#ifdef DEBUG_QUSB2
+	debug_qusb2("%s: readl_cnt=%u, reg=0x%p, val=0x%x\n",
+			__func__, readl_count++, base + offset, reg);
+#endif
 }
 
 static inline
@@ -267,10 +322,19 @@ void qusb2_phy_configure(void __iomem *base,
 	int i;
 
 	for (i = 0; i < num; i++) {
-		if (tbl[i].in_layout)
+		if (tbl[i].in_layout) {
 			writel(tbl[i].val, base + regs[tbl[i].offset]);
-		else
+#ifdef DEBUG_QUSB2
+			debug_qusb2("%s: writel_cnt=%u, reg=0x%p, val=0x%x\n",
+					__func__, writel_count++, base + regs[tbl[i].offset], tbl[i].val);
+#endif
+		} else {
 			writel(tbl[i].val, base + tbl[i].offset);
+#ifdef DEBUG_QUSB2
+			debug_qusb2("%s: writel_cnt=%u, reg=0x%p, val=0x%x\n",
+					__func__, writel_count++, base + regs[tbl[i].offset], tbl[i].val);
+#endif
+		}
 	}
 }
 
@@ -289,6 +353,49 @@ static int qusb2phy_do_reset(struct qusb2_phy *qphy)
 		return ret;
 
 	return 0;
+}
+
+#define EFUSE_LEN 1
+
+/*
+ * Fetches HS Tx tuning value from nvmem and sets the
+ * QUSB2PHY_PORT_TUNE1/2 register.
+ * For error case, skip setting the value and use the default value.
+ */
+static void qusb2_phy_set_tune2_param(struct qusb2_phy *qphy)
+{
+	const struct qusb2_phy_cfg *cfg = qphy->cfg;
+	u8 val[EFUSE_LEN], hstx_trim;
+	int ret;
+
+	/*
+	 * Read efuse register having TUNE2/1 parameter's high nibble.
+	 * If efuse register shows value as 0x0 (indicating value is not
+	 * fused), or if we fail to find a valid efuse register setting,
+	 * then use default value for high nibble that we have already
+	 * set while configuring the phy.
+	 */
+	ret = nvmem_cell_read(&qphy->cell, val, EFUSE_LEN);
+	if (ret) {
+		printf("%s: failed to read a valid hs-tx trim value\n", __func__);
+		return;
+	}
+
+	hstx_trim = val[0];
+	free(val);
+
+	if (!hstx_trim) {
+		printf("%s: failed to read a valid hs-tx trim value\n", __func__);
+		return;
+	}
+
+	/* Fused TUNE1/2 value is the higher nibble only */
+	if (cfg->update_tune1_with_efuse)
+		qusb2_write_mask(qphy->base, cfg->regs[QUSB2PHY_PORT_TUNE1],
+				 hstx_trim << HSTX_TRIM_SHIFT, HSTX_TRIM_MASK);
+	else
+		qusb2_write_mask(qphy->base, cfg->regs[QUSB2PHY_PORT_TUNE2],
+				 hstx_trim << HSTX_TRIM_SHIFT, HSTX_TRIM_MASK);
 }
 
 static int qusb2phy_power_on(struct phy *phy)
@@ -314,6 +421,9 @@ static int qusb2phy_power_on(struct phy *phy)
 	qusb2_phy_configure(qphy->base, cfg->regs, cfg->tbl,
 				 cfg->tbl_num);
 
+	/* Set efuse value for tuning the PHY */
+	qusb2_phy_set_tune2_param(qphy);
+
 	/* Enable the PHY */
 	qusb2_clrbits(qphy->base, cfg->regs[QUSB2PHY_PORT_POWERDOWN],
 		      POWER_DOWN);
@@ -325,17 +435,30 @@ static int qusb2phy_power_on(struct phy *phy)
 		val |= CLK_REF_SEL;
 
 		writel(val, qphy->base + QUSB2PHY_PLL_TEST);
+#ifdef DEBUG_QUSB2
+		debug_qusb2("%s: writel_cnt=%u, reg=0x%p, val=0x%x\n",
+				__func__, writel_count++, qphy->base + QUSB2PHY_PLL_TEST, val);
+#endif
 
 		/* ensure above write is through */
-		readl(qphy->base + QUSB2PHY_PLL_TEST);
+		val = readl(qphy->base + QUSB2PHY_PLL_TEST);
+#ifdef DEBUG_QUSB2
+		debug_qusb2("%s: readl_cnt=%u, reg=0x%p, val=0x%x\n",
+				__func__, readl_count++, qphy->base + QUSB2PHY_PLL_TEST, val);
+#endif
 	}
 
 	/* Required to get phy pll lock successfully */
 	udelay(100);
 
 	val = readb(qphy->base + cfg->regs[QUSB2PHY_PLL_STATUS]);
+#ifdef DEBUG_QUSB2
+	debug_qusb2("%s: readl_cnt=%u, reg=0x%p, val=0x%x\n",
+			__func__, readl_count++, qphy->base + cfg->regs[QUSB2PHY_PLL_STATUS], val);
+#endif
+
 	if (!(val & cfg->mask_core_ready)) {
-		pr_err("QUSB2PHY pll lock failed: status reg = %x\n", val);
+		printf("%s: QUSB2PHY pll lock failed: status reg = %x\n", __func__, val);
 		ret = -EBUSY;
 		return ret;
 	}
@@ -394,6 +517,12 @@ static int qusb2phy_probe(struct udevice *dev)
 	ret = reset_get_by_name(dev, "phy", &qphy->phy_rst);
 	if (ret)
 		return ret;
+
+	ret = nvmem_cell_get_by_name(dev, "qusb-nvmem-cells", &qphy->cell);
+	if (ret) {
+		printf("%s: failed to lookup tune2 hstx trim value\n", __func__);
+		return ret;
+	}
 
 	qphy->cfg = (const struct qusb2_phy_cfg *)dev_get_driver_data(dev);
 	if (!qphy->cfg)
