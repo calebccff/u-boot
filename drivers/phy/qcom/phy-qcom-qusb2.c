@@ -196,15 +196,10 @@ static const struct qusb2_phy_cfg sm6115_phy_cfg = {
 
 /**
  * struct qusb2_phy - structure holding qusb2 phy attributes
- *
  * @phy: generic phy
  * @base: iomapped memory space for qubs2 phy
- *
- * @cfg_ahb_clk: AHB2PHY interface clock
- * @ref_clk: phy reference clock
- * @iface_clk: phy interface clock
+ * @clks: clocks
  * @phy_rst: phy reset control
- *
  * @cfg: phy config data
  * @has_se_clk_scheme: indicate if PHY has single-ended ref clock scheme
  */
@@ -212,12 +207,8 @@ struct qusb2_phy {
 	struct phy *phy;
 	void __iomem *base;
 
-	struct clk *cfg_ahb_clk;
-	struct clk *ref_clk;
-	struct clk *iface_clk;
 	struct clk_bulk clks;
 	struct reset_ctl phy_rst;
-	struct nvmem_cell cell;
 
 	const struct qusb2_phy_cfg *cfg;
 	bool has_se_clk_scheme;
@@ -362,40 +353,19 @@ static int qusb2phy_do_reset(struct qusb2_phy *qphy)
  * QUSB2PHY_PORT_TUNE1/2 register.
  * For error case, skip setting the value and use the default value.
  */
-static void qusb2_phy_set_tune2_param(struct qusb2_phy *qphy)
+static void qusb2_phy_set_tune2_param(struct qusb2_phy *qphy, struct udevice *dev)
 {
 	const struct qusb2_phy_cfg *cfg = qphy->cfg;
-	u8 val[EFUSE_LEN], hstx_trim;
-	int ret;
+	ofnode dp = dev_ofnode(dev);
+	u32 val, mask;
 
-	/*
-	 * Read efuse register having TUNE2/1 parameter's high nibble.
-	 * If efuse register shows value as 0x0 (indicating value is not
-	 * fused), or if we fail to find a valid efuse register setting,
-	 * then use default value for high nibble that we have already
-	 * set while configuring the phy.
-	 */
-	ret = nvmem_cell_read(&qphy->cell, val, EFUSE_LEN);
-	if (ret) {
-		printf("%s: failed to read a valid hs-tx trim value\n", __func__);
-		return;
+	if (ofnode_device_is_compatible(dp, "qcom,sm6115-qusb2-phy")) {
+		val = 0xb0;
+		mask = 0xf0;
+		qusb2_write_mask(qphy->base, cfg->regs[QUSB2PHY_PORT_TUNE2], val, mask);
 	}
 
-	hstx_trim = val[0];
-	free(val);
-
-	if (!hstx_trim) {
-		printf("%s: failed to read a valid hs-tx trim value\n", __func__);
-		return;
-	}
-
-	/* Fused TUNE1/2 value is the higher nibble only */
-	if (cfg->update_tune1_with_efuse)
-		qusb2_write_mask(qphy->base, cfg->regs[QUSB2PHY_PORT_TUNE1],
-				 hstx_trim << HSTX_TRIM_SHIFT, HSTX_TRIM_MASK);
-	else
-		qusb2_write_mask(qphy->base, cfg->regs[QUSB2PHY_PORT_TUNE2],
-				 hstx_trim << HSTX_TRIM_SHIFT, HSTX_TRIM_MASK);
+	return;
 }
 
 static int qusb2phy_power_on(struct phy *phy)
@@ -422,7 +392,7 @@ static int qusb2phy_power_on(struct phy *phy)
 				 cfg->tbl_num);
 
 	/* Set efuse value for tuning the PHY */
-	qusb2_phy_set_tune2_param(qphy);
+	qusb2_phy_set_tune2_param(qphy, phy->dev);
 
 	/* Enable the PHY */
 	qusb2_clrbits(qphy->base, cfg->regs[QUSB2PHY_PORT_POWERDOWN],
@@ -517,12 +487,6 @@ static int qusb2phy_probe(struct udevice *dev)
 	ret = reset_get_by_name(dev, "phy", &qphy->phy_rst);
 	if (ret)
 		return ret;
-
-	ret = nvmem_cell_get_by_name(dev, "qusb-nvmem-cells", &qphy->cell);
-	if (ret) {
-		printf("%s: failed to lookup tune2 hstx trim value\n", __func__);
-		return ret;
-	}
 
 	qphy->cfg = (const struct qusb2_phy_cfg *)dev_get_driver_data(dev);
 	if (!qphy->cfg)
