@@ -40,11 +40,6 @@
 		regulator-boot-on;
 	};
 
-	qusb2_hstx_trim: hstx-trim@25b {
-		reg = <0x25b 0x1>;
-		bits = <1 4>;
-	};
-
 	regulators {
 		compatible = "qcom,rpm-pm6125-regulators";
 
@@ -415,9 +410,6 @@
 
 			resets = <&reset GCC_QUSB2PHY_PRIM_BCR>;
 			reset-names = "phy";
-
-			//qusb-nvmem-cells = <&qusb2_hstx_trim>;
-			//nvmem-cell-names = "qusb-nvmem-cells";
 		};
 
 		usb_qmpphy: phy@1615000 {
