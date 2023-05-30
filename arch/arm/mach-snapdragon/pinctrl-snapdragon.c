@@ -17,6 +17,7 @@
 #include "pinctrl-snapdragon.h"
 
 struct msm_pinctrl_priv {
+	u32 ngroups;
 	phys_addr_t west_base;
 	phys_addr_t east_base;
 	phys_addr_t south_base;
@@ -140,7 +141,25 @@ static int msm_pinconf_set(struct udevice *dev, unsigned int pin_selector,
 	return 0;
 }
 
+static int msm_get_groups_count(struct udevice *dev)
+{
+	struct msm_pinctrl_priv *priv = dev_get_priv(dev);
+
+	return priv->ngroups;
+}
+
+static const char *msm_get_group_name(struct udevice *dev,
+				      unsigned int selector)
+{
+	struct msm_pinctrl_priv *priv = dev_get_priv(dev);
+
+	return priv->groups[selector].name;
+}
+
+
 static struct pinctrl_ops msm_pinctrl_ops = {
+	.get_groups_count = msm_get_groups_count,
+	.get_group_name = msm_get_group_name,
 	.get_pins_count = msm_get_pins_count,
 	.get_pin_name = msm_get_pin_name,
 	.set_state = pinctrl_generic_set_state,
