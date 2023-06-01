@@ -35,7 +35,7 @@ static void show_psci_version(void)
 
 	printf("PSCI:  v%ld.%ld\n",
 	       PSCI_VERSION_MAJOR(res.a0),
-		PSCI_VERSION_MINOR(res.a0));
+	       PSCI_VERSION_MINOR(res.a0));
 }
 
 int board_init(void)
