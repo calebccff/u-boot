@@ -214,7 +214,10 @@ struct qusb2_phy {
 	bool has_se_clk_scheme;
 };
 
+#define DEBUG_QUSB2
+
 #ifdef DEBUG_QUSB2
+#define debug_qusb2 printf
 static unsigned int writel_count = 0;
 static unsigned int readl_count = 0;
 #endif
@@ -323,7 +326,7 @@ void qusb2_phy_configure(void __iomem *base,
 			writel(tbl[i].val, base + tbl[i].offset);
 #ifdef DEBUG_QUSB2
 			debug_qusb2("%s: writel_cnt=%u, reg=0x%p, val=0x%x\n",
-					__func__, writel_count++, base + regs[tbl[i].offset], tbl[i].val);
+					__func__, writel_count++, base + tbl[i].offset, tbl[i].val);
 #endif
 		}
 	}
@@ -348,11 +351,7 @@ static int qusb2phy_do_reset(struct qusb2_phy *qphy)
 
 #define EFUSE_LEN 1
 
-/*
- * Fetches HS Tx tuning value from nvmem and sets the
- * QUSB2PHY_PORT_TUNE1/2 register.
- * For error case, skip setting the value and use the default value.
- */
+/* Set the QUSB2PHY_PORT_TUNE1/2 register. */
 static void qusb2_phy_set_tune2_param(struct qusb2_phy *qphy, struct udevice *dev)
 {
 	const struct qusb2_phy_cfg *cfg = qphy->cfg;
