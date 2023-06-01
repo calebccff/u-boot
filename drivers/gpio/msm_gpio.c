@@ -36,9 +36,11 @@ struct msm_gpio_bank {
 static int msm_gpio_direction_input(struct udevice *dev, unsigned int gpio)
 {
 	struct msm_gpio_bank *priv = dev_get_priv(dev);
+	phys_addr_t base;
 	phys_addr_t reg;
 
-	reg = priv->east_base + GPIO_CONFIG_OFF(gpio);
+	base = (gpio == 89) ? priv->west_base : priv->east_base;
+	reg = base + GPIO_CONFIG_OFF(gpio);
 
 	/* Disable OE bit */
 	clrsetbits_le32(reg, GPIO_OE_MASK, GPIO_OE_DISABLE);
@@ -61,14 +63,14 @@ static int msm_gpio_direction_output(struct udevice *dev, unsigned gpio,
 				     int value)
 {
 	struct msm_gpio_bank *priv = dev_get_priv(dev);
+	phys_addr_t base;
 	phys_addr_t reg;
-	phys_addr_t b = 0;
 
-	b = priv->east_base;
-	reg = b + GPIO_CONFIG_OFF(gpio);
+	base = (gpio == 89) ? priv->west_base : priv->east_base;
+	reg = base + GPIO_CONFIG_OFF(gpio);
 	value = !!value;
 	/* set value */
-	writel(value << GPIO_OUT, b + GPIO_IN_OUT_OFF(gpio));
+	writel(value << GPIO_OUT, base + GPIO_IN_OUT_OFF(gpio));
 	/* switch direction */
 	clrsetbits_le32(reg, GPIO_OE_MASK, GPIO_OE_ENABLE);
 
@@ -85,11 +87,10 @@ static int msm_gpio_get_value(struct udevice *dev, unsigned gpio)
 static int msm_gpio_get_function(struct udevice *dev, unsigned offset)
 {
 	struct msm_gpio_bank *priv = dev_get_priv(dev);
-	phys_addr_t b;
+	phys_addr_t base;
 
-	b = priv->east_base;
-
-	if (readl(b + GPIO_CONFIG_OFF(offset)) & GPIO_OE_ENABLE)
+	base = (offset == 89) ? priv->west_base : priv->east_base;
+	if (readl(base + GPIO_CONFIG_OFF(offset)) & GPIO_OE_ENABLE)
 		return GPIOF_OUTPUT;
 
 	return GPIOF_INPUT;
