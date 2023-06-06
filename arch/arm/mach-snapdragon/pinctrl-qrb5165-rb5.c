@@ -20,7 +20,7 @@ static const char * const msm_pinctrl_pins[] = {
 };
 
 static const struct pinctrl_function msm_pinctrl_functions[] = {
-	{"qup2", 1},
+	{"qup12", 1},
 	{"gpio", 0},
 };
 
