@@ -18,6 +18,7 @@
 
 struct msm_pinctrl_priv {
 	phys_addr_t west_base;
+	phys_addr_t north_base;
 	phys_addr_t east_base;
 	phys_addr_t south_base;
 	struct msm_pinctrl_data *data;
@@ -60,21 +61,31 @@ static const char *msm_get_function_name(struct udevice *dev,
 static int msm_pinctrl_probe(struct udevice *dev)
 {
 	struct msm_pinctrl_priv *priv = dev_get_priv(dev);
+	phys_addr_t third_base = FDT_ADDR_T_NONE;
+	ofnode dp;
+
+	dp = dev_ofnode(dev);
 
 	priv->west_base = dev_read_addr_index(dev, 0);
 	priv->south_base = dev_read_addr_index(dev, 1);
-	priv->east_base = dev_read_addr_index(dev, 2);
+	third_base = dev_read_addr_index(dev, 2);
+
+	if (ofnode_device_is_compatible(dp, "qcom,sm6115-pinctrl"))
+		priv->east_base = third_base;
+
+	if (ofnode_device_is_compatible(dp, "qcom,sm8250-pinctrl"))
+		priv->north_base = third_base;
 
 	priv->data = (struct msm_pinctrl_data *)dev->driver_data;
 
 	if (priv->west_base == FDT_ADDR_T_NONE ||
-	    priv->east_base == FDT_ADDR_T_NONE ||
+	    third_base == FDT_ADDR_T_NONE ||
 	    priv->south_base == FDT_ADDR_T_NONE)
 		return -EINVAL;
 
-	dev_dbg(dev, "priv->west_base (%llu)\n", priv->west_base);
-	dev_dbg(dev, "priv->east_base (%llu)\n", priv->east_base);
-	dev_dbg(dev, "priv->south_base (%llu)\n", priv->south_base);
+	printf("priv->west_base (%llx)\n", priv->west_base);
+	printf("priv->south_base (%llx)\n", priv->south_base);
+	printf("third_base (%llx)\n", third_base);
 
 	return 0;
 }
@@ -91,13 +102,25 @@ static int msm_pinmux_set(struct udevice *dev, unsigned int pin_selector,
 {
 	struct msm_pinctrl_priv *priv = dev_get_priv(dev);
 	phys_addr_t base;
+	ofnode dp;
 
-	// FIXME: Hack in place
-	if ((pin_selector == 12) || (pin_selector == 13) || (pin_selector == 89)) // west
-		base = priv->west_base;
+	dp = dev_ofnode(dev);
 
-	if (pin_selector == 37) //east
-		base = priv->east_base;
+	if (ofnode_device_is_compatible(dp, "qcom,sm6115-pinctrl")) {
+		// FIXME: Hack in place
+		if ((pin_selector == 12) || (pin_selector == 13) || (pin_selector == 89)) // west
+			base = priv->west_base;
+		if (pin_selector == 37) //east
+			base = priv->east_base;
+	}
+
+	if (ofnode_device_is_compatible(dp, "qcom,sm8250-pinctrl")) {
+		// FIXME: Hack in place
+		if ((pin_selector == 34) || (pin_selector == 35)) // south
+			base = priv->south_base;
+		if (pin_selector == 77) //north
+			base = priv->north_base;
+	}
 
 	clrsetbits_le32(base + GPIO_CONFIG_OFFSET(pin_selector),
 			TLMM_FUNC_SEL_MASK | TLMM_GPIO_DISABLE,
@@ -111,13 +134,25 @@ static int msm_pinconf_set(struct udevice *dev, unsigned int pin_selector,
 {
 	struct msm_pinctrl_priv *priv = dev_get_priv(dev);
 	phys_addr_t base;
+	ofnode dp;
 
-	// FIXME: Hack in place
-	if ((pin_selector == 12) || (pin_selector == 13) || (pin_selector == 89)) // west
-		base = priv->west_base;
+	dp = dev_ofnode(dev);
 
-	if (pin_selector == 37) //east
-		base = priv->east_base;
+	if (ofnode_device_is_compatible(dp, "qcom,sm6115-pinctrl")) {
+		// FIXME: Hack in place
+		if ((pin_selector == 12) || (pin_selector == 13) || (pin_selector == 89)) // west
+			base = priv->west_base;
+		if (pin_selector == 37) //east
+			base = priv->east_base;
+	}
+
+	if (ofnode_device_is_compatible(dp, "qcom,sm8250-pinctrl")) {
+		// FIXME: Hack in place
+		if ((pin_selector == 34) || (pin_selector == 35)) // south
+			base = priv->south_base;
+		if (pin_selector == 77) //north
+			base = priv->north_base;
+	}
 
 	switch (param) {
 	case PIN_CONFIG_DRIVE_STRENGTH:
