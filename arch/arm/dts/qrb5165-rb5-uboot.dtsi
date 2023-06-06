@@ -17,19 +17,8 @@
 			u-boot,dm-pre-reloc;
 		};
 
-		serial@988000 {
+		serial@a90000 {
 			u-boot,dm-pre-reloc;
 		};
-	};
-};
-
-&pm8150_pon {
-	key_vol_down {
-		gpios = <&pm8150_pon 1 0>;
-		label = "key_vol_down";
-	};
-	key_power {
-		gpios = <&pm8150_pon 0 0>;
-		label = "key_power";
 	};
 };
