@@ -90,7 +90,6 @@ config TARGET_QRB4210RB2
 config TARGET_QRB5165RB5
 	bool "Qualcomm Technologies, Inc. QRB5165 RB5"
 	select LINUX_KERNEL_IMAGE_HEADER
-	select MISC_INIT_R
 	help
 	  Support for Qualcomm Technologies, Inc. QRB5165 RB5 board.
 	  Features:
