@@ -16,8 +16,8 @@
 			arch = "arm64";
 			os = "linux";
 			compression = "gzip";
-			load = <0x80000000>;
-			entry = <0x80000000>;
+			load = <0xB0000000>;
+			entry = <0xB0000000>;
 			hash-1 {
 				algo = "sha1";
 			};
@@ -29,7 +29,6 @@
 			type = "ramdisk";
 			arch = "arm64";
 			os = "linux";
-			compression = "gzip";
 			load = <00000000>;
 			entry = <00000000>;
 			hash-1 {
@@ -43,7 +42,6 @@
 			type = "flat_dt";
 			arch = "arm64";
 			compression = "none";
-			load = <0x83000000>;
 			hash-1 {
 				algo = "sha1";
 			};
