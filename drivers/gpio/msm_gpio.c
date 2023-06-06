@@ -29,6 +29,7 @@ DECLARE_GLOBAL_DATA_PTR;
 
 struct msm_gpio_bank {
 	phys_addr_t west_base;
+	phys_addr_t north_base;
 	phys_addr_t east_base;
 	phys_addr_t south_base;
 };
@@ -38,8 +39,16 @@ static int msm_gpio_direction_input(struct udevice *dev, unsigned int gpio)
 	struct msm_gpio_bank *priv = dev_get_priv(dev);
 	phys_addr_t base;
 	phys_addr_t reg;
+	ofnode dp;
 
-	base = (gpio == 89) ? priv->west_base : priv->east_base;
+	dp = dev_ofnode(dev);
+
+	if (ofnode_device_is_compatible(dp, "qcom,sm6115-pinctrl"))
+		base = (gpio == 89) ? priv->west_base : priv->east_base;
+
+	if (ofnode_device_is_compatible(dp, "qcom,sm8250-pinctrl"))
+		base = (gpio == 77) ? priv->north_base : priv->east_base;
+
 	reg = base + GPIO_CONFIG_OFF(gpio);
 
 	/* Disable OE bit */
@@ -65,8 +74,16 @@ static int msm_gpio_direction_output(struct udevice *dev, unsigned gpio,
 	struct msm_gpio_bank *priv = dev_get_priv(dev);
 	phys_addr_t base;
 	phys_addr_t reg;
+	ofnode dp;
 
-	base = (gpio == 89) ? priv->west_base : priv->east_base;
+	dp = dev_ofnode(dev);
+
+	if (ofnode_device_is_compatible(dp, "qcom,sm6115-pinctrl"))
+		base = (gpio == 89) ? priv->west_base : priv->east_base;
+
+	if (ofnode_device_is_compatible(dp, "qcom,sm8250-pinctrl"))
+		base = (gpio == 77) ? priv->north_base : priv->east_base;
+
 	reg = base + GPIO_CONFIG_OFF(gpio);
 	value = !!value;
 	/* set value */
@@ -88,8 +105,16 @@ static int msm_gpio_get_function(struct udevice *dev, unsigned offset)
 {
 	struct msm_gpio_bank *priv = dev_get_priv(dev);
 	phys_addr_t base;
+	ofnode dp;
 
-	base = (offset == 89) ? priv->west_base : priv->east_base;
+	dp = dev_ofnode(dev);
+
+	if (ofnode_device_is_compatible(dp, "qcom,sm6115-pinctrl"))
+		base = (offset == 89) ? priv->west_base : priv->east_base;
+
+	if (ofnode_device_is_compatible(dp, "qcom,sm8250-pinctrl"))
+		base = (offset == 77) ? priv->north_base : priv->east_base;
+
 	if (readl(base + GPIO_CONFIG_OFF(offset)) & GPIO_OE_ENABLE)
 		return GPIOF_OUTPUT;
 
@@ -109,44 +134,72 @@ static int msm_gpio_probe(struct udevice *dev)
 	struct msm_gpio_bank *priv = dev_get_priv(dev);
 	phys_addr_t reg;
 	int value;
+	ofnode dp;
 
-	priv->west_base = dev_read_addr_index(dev, 0);
-	priv->south_base = dev_read_addr_index(dev, 1);
-	priv->east_base = dev_read_addr_index(dev, 2);
+	dp = dev_ofnode(dev);
 
-	priv->west_base = 0x00500000;
-	priv->south_base = 0x00900000;
-	priv->east_base = 0x00d00000;
+	if (ofnode_device_is_compatible(dp, "qcom,sm6115-pinctrl")) {
+		priv->west_base = dev_read_addr_index(dev, 0);
+		priv->south_base = dev_read_addr_index(dev, 1);
+		priv->east_base = dev_read_addr_index(dev, 2);
+
+		priv->west_base = 0x00500000;
+		priv->south_base = 0x00900000;
+		priv->east_base = 0x00d00000;
+
+		if (priv->east_base == FDT_ADDR_T_NONE) {
+			printf("%s: Error:: failed getting base_addr\n", __func__);
+			return -EINVAL;
+		}
+
+		printf("priv->west_base (0x%llx)\n", priv->west_base);
+		printf("priv->south_base (0x%llx)\n", priv->south_base);
+		printf("priv->east_base (0x%llx)\n", priv->east_base);
+
+		value = 1;
+		// west
+		reg = priv->west_base + GPIO_CONFIG_OFF(89);
+		value = !!value;
+		/* set value */
+		writel(value << GPIO_OUT, priv->west_base + GPIO_IN_OUT_OFF(89));
+		/* switch direction */
+		clrsetbits_le32(reg, GPIO_OE_MASK, GPIO_OE_ENABLE);
+
+		value = 1;
+		// east
+		reg = priv->east_base + GPIO_CONFIG_OFF(37);
+		value = !!value;
+		/* set value */
+		writel(value << GPIO_OUT, priv->east_base + GPIO_IN_OUT_OFF(37));
+		/* switch direction */
+		clrsetbits_le32(reg, GPIO_OE_MASK, GPIO_OE_ENABLE);
+	}
+
+	if (ofnode_device_is_compatible(dp, "qcom,sm8250-pinctrl")) {
+		priv->west_base = dev_read_addr_index(dev, 0);
+		priv->south_base = dev_read_addr_index(dev, 1);
+		priv->north_base = dev_read_addr_index(dev, 2);
+
+		priv->west_base = 0x0f100000;
+		priv->south_base = 0x0f500000;
+		priv->north_base = 0x0f900000;
+
+		if (priv->north_base == FDT_ADDR_T_NONE) {
+			printf("%s: Error:: failed getting base_addr\n", __func__);
+			return -EINVAL;
+		}
+
+		printf("priv->west_base (0x%llx)\n", priv->west_base);
+		printf("priv->south_base (0x%llx)\n", priv->south_base);
+		printf("priv->north_base (0x%llx)\n", priv->north_base);
+	}
 
 	if (priv->west_base == FDT_ADDR_T_NONE ||
-	    priv->east_base == FDT_ADDR_T_NONE ||
 	    priv->south_base == FDT_ADDR_T_NONE) {
-		printf("Error %s failed getting base_addr\n", __func__);
+		printf("%s: Error:: failed getting base_addr\n", __func__);
 		return -EINVAL;
 	}
 
-	printf("priv->west_base (0x%llx)\n", priv->west_base);
-	printf("priv->east_base (0x%llx)\n", priv->east_base);
-	printf("priv->south_base (0x%llx)\n", priv->south_base);
-
-	value = 1;
-	// west
-	reg = priv->west_base + GPIO_CONFIG_OFF(89);
-	value = !!value;
-	/* set value */
-	writel(value << GPIO_OUT, priv->west_base + GPIO_IN_OUT_OFF(89));
-	/* switch direction */
-	clrsetbits_le32(reg, GPIO_OE_MASK, GPIO_OE_ENABLE);
-
-	value = 1;
-	// east
-	reg = priv->east_base + GPIO_CONFIG_OFF(37);
-	value = !!value;
-	/* set value */
-	writel(value << GPIO_OUT, priv->east_base + GPIO_IN_OUT_OFF(37));
-	/* switch direction */
-	clrsetbits_le32(reg, GPIO_OE_MASK, GPIO_OE_ENABLE);
-	
 	return 0;
 }
 
