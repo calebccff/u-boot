@@ -27,7 +27,7 @@
 
 	memory {
 		device_type = "memory";
-		reg = <0 0x80000000 0 0x40000000>;
+		reg = <0x0 0x80000000 0x0 0xfdfa0000>;
 	};
 
 	psci {
@@ -43,7 +43,10 @@
 
 		tlmm: pinctrl_west@f100000 {
 			compatible = "qcom,sm8250-pinctrl";
-			reg = <0x0f100000 0x300000>;
+			reg = <0x0f100000 0x300000>,
+			      <0x0f500000 0x300000>,
+			      <0x0f900000 0x300000>;
+			reg-names = "west", "south", "north";
 			gpio-count = <181>;
 			gpio-controller;
 			#gpio-cells = <2>;
@@ -51,8 +54,33 @@
 
 			/* DEBUG UART */
 			debug_uart_on: debug-uart-default {
-				pins = "GPIO_117", "GPIO_118";
-				function = "qup2";
+				pins = "GPIO_34", "GPIO_35";
+				function = "qup12";
+			};
+
+			sdc2_default_state: sdc2-default-state {
+				clk-pins {
+					pins = "sdc2_clk";
+					bias-disable;
+					drive-strength = <16>;
+				};
+
+				cmd-pins {
+					pins = "sdc2_cmd";
+					bias-pull-up;
+					drive-strength = <10>;
+				};
+
+				data-pins {
+					pins = "sdc2_data";
+					bias-pull-up;
+					drive-strength = <10>;
+				};
+			};
+
+			sdc2_card_det_n: sd-card-det-n-state {
+				pins = "GPIO_77";
+				function = "gpio";
 			};
 		};
 
@@ -70,13 +98,109 @@
 			#reset-cells = <1>;
 		};
 
-		debug_uart: serial@988000 {
-			compatible = "qcom,msm-geni-uart";
-			reg = <0x00988000 0x4000>;
+		debug_uart: serial@a90000 {
+			compatible = "qcom,msm-geni-uart-v3-n-above";
+			reg = <0x00a90000 0x4000>;
 			clock-names = "se-clk";
-			clocks = <&gcc GCC_QUPV3_WRAP0_S2_CLK>;
+			clocks = <&gcc GCC_QUPV3_WRAP1_S4_CLK>;
 			pinctrl-names = "default";
 			pinctrl-0 = <&debug_uart_on>;
+		};
+
+		sdhc_2: mmc@8804000 {
+			compatible = "qcom,sm8250-sdhci", "qcom,sdhci-msm-v5";
+			reg = <0x08804000 0x1000>;
+
+			clocks = <&gcc GCC_SDCC2_AHB_CLK>,
+				 <&gcc GCC_SDCC2_APPS_CLK>;
+			clock-names = "iface", "core";
+
+			resets = <&reset GCC_SDCC2_BCR>;
+
+			cd-gpios = <&tlmm 77 GPIO_ACTIVE_LOW>; /* card detect gpio */
+			//vmmc-supply = <&vreg_l9c_2p96>;
+			//vqmmc-supply = <&vreg_l6c_2p96>;
+
+			bus-width = <4>;
+			no-sdio;
+			no-mmc;
+
+			pinctrl-names = "default";
+			pinctrl-0 = <&sdc2_default_state &sdc2_card_det_n>;
+		};
+
+		usb_2_hsphy: phy@88e4000 {
+			compatible = "qcom,sm8250-usb-hs-phy",
+				     "qcom,usb-snps-hs-7nm-phy";
+			reg = <0x088e4000 0x400>;
+			#phy-cells = <0>;
+
+			resets = <&reset GCC_QUSB2PHY_SEC_BCR>;
+			reset-names = "phy";
+		};
+
+		usb_2_qmpphy: phy@88eb000 {
+			compatible = "qcom,sm8250-qmp-usb3-uni-phy";
+			reg = <0x088eb000 0x200>;
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges;
+
+			clocks = <&gcc GCC_USB3_SEC_PHY_AUX_CLK>,
+				 <&gcc GCC_USB3_SEC_CLKREF_EN>,
+				 <&gcc GCC_USB3_SEC_PHY_COM_AUX_CLK>;
+				 //<&gcc GCC_USB3_SEC_PHY_PIPE_CLK>;
+			clock-names = "aux", "ref", "com_aux";
+
+			resets = <&reset GCC_USB3PHY_PHY_SEC_BCR>,
+				 <&reset GCC_USB3_PHY_SEC_BCR>;
+			reset-names = "phy", "common";
+
+			//#clock-cells = <0>;
+			//clock-names = "pipe0";
+			//clock-output-names = "usb3_uni_phy_pipe_clk_src";
+
+			#phy-cells = <0>;
+		};
+
+		usb_2: usb@a8f8800 {
+			compatible = "qcom,sm8250-dwc3", "qcom,dwc3";
+			reg = <0x0a8f8800 0x400>;
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges;
+
+			clocks = <&gcc GCC_CFG_NOC_USB3_SEC_AXI_CLK>,
+				 <&gcc GCC_USB30_SEC_MASTER_CLK>,
+				 <&gcc GCC_AGGRE_USB3_SEC_AXI_CLK>,
+				 <&gcc GCC_USB30_SEC_SLEEP_CLK>,
+				 <&gcc GCC_USB30_SEC_MOCK_UTMI_CLK>,
+				 <&gcc GCC_USB3_SEC_CLKREF_EN>;
+			clock-names = "cfg_noc",
+				      "core",
+				      "iface",
+				      "sleep",
+				      "mock_utmi",
+				      "xo";
+
+			assigned-clocks = <&gcc GCC_USB30_SEC_MOCK_UTMI_CLK>,
+					  <&gcc GCC_USB30_SEC_MASTER_CLK>;
+			assigned-clock-rates = <19200000>, <200000000>;
+
+			power-domains = <&gcc USB30_SEC_GDSC>;
+
+			resets = <&reset GCC_USB30_SEC_BCR>;
+
+			usb_2_dwc3: usb@a800000 {
+				compatible = "snps,dwc3";
+				reg = <0x0a800000 0xcd00>;
+				snps,dis_u2_susphy_quirk;
+				snps,dis_enblslpm_quirk;
+				phys = <&usb_2_hsphy>, <&usb_2_qmpphy>;
+				phy-names = "usb2-phy", "usb3-phy";
+				maximum-speed = "super-speed";
+				dr_mode = "host";
+			};
 		};
 
 		spmi@c440000 {
