@@ -20,6 +20,7 @@
 #include <linux/clk-provider.h>
 #include <linux/delay.h>
 #include <linux/iopoll.h>
+#include <linux/ioport.h>
 
 #include <dt-bindings/clock/qcom,gcc-sm6115.h>
 
@@ -409,6 +410,9 @@ struct qmp_ufs_priv {
 	unsigned int reset_count;
 
 	const struct qmp_ufs_cfg *cfg;
+
+	struct udevice *dev;
+
 	u32 mode;
 	u32 submode;
 };
@@ -667,8 +671,10 @@ static int qmp_ufs_power_on(struct phy *phy)
 	qmp_ufs_init_registers(qmp, cfg);
 
 	ret = qmp_ufs_do_reset(qmp);
-	if (ret)
+	if (ret) {
+		printf("%s: qmp reset failed\n", __func__);
 		return ret;
+	}
 
 	/* Pull PHY out of reset state */
 	if (!cfg->no_pcs_sw_reset)
@@ -781,10 +787,91 @@ clk_get_err:
 	return ret;
 }
 
+static int qmp_ufs_parse_dt_legacy(struct qmp_ufs_priv *qmp, struct device_node *np)
+{
+	const struct qmp_ufs_cfg *cfg = qmp->cfg;
+	struct resource res;
+
+	dev_read_resource(qmp->dev, 0, &res);
+	qmp->serdes = devm_ioremap(qmp->dev, res.start, resource_size(&res));
+	if (IS_ERR(qmp->serdes))
+		return PTR_ERR(qmp->serdes);
+
+	/*
+	 * Get memory resources for the PHY:
+	 * Resources are indexed as: tx -> 0; rx -> 1; pcs -> 2.
+	 * For dual lane PHYs: tx2 -> 3, rx2 -> 4, pcs_misc (optional) -> 5
+	 * For single lane PHYs: pcs_misc (optional) -> 3.
+	 */
+	dev_read_resource(qmp->dev, 1, &res);
+	qmp->tx = devm_ioremap(qmp->dev, res.start, resource_size(&res));
+	if (IS_ERR(qmp->tx))
+		return PTR_ERR(qmp->tx);
+
+	dev_read_resource(qmp->dev, 2, &res);
+	qmp->rx = devm_ioremap(qmp->dev, res.start, resource_size(&res));
+	if (IS_ERR(qmp->rx))
+		return PTR_ERR(qmp->rx);
+
+	if (cfg->lanes >= 2) {
+		dev_read_resource(qmp->dev, 3, &res);
+		qmp->tx2 = devm_ioremap(qmp->dev, res.start, resource_size(&res));
+		if (IS_ERR(qmp->tx2))
+			return PTR_ERR(qmp->tx2);
+
+		dev_read_resource(qmp->dev, 4, &res);
+		qmp->rx2 = devm_ioremap(qmp->dev, res.start, resource_size(&res));
+		if (IS_ERR(qmp->rx2))
+			return PTR_ERR(qmp->rx2);
+
+		dev_read_resource(qmp->dev, 5, &res);
+		qmp->pcs_misc = devm_ioremap(qmp->dev, res.start, resource_size(&res));
+	} else {
+		dev_read_resource(qmp->dev, 3, &res);
+		qmp->pcs_misc = devm_ioremap(qmp->dev, res.start, resource_size(&res));
+	}
+
+	if (IS_ERR(qmp->pcs_misc))
+		dev_dbg(qmp->dev, "PHY pcs_misc-reg not used\n");
+
+	return 0;
+}
+
+static int qmp_ufs_parse_dt(struct qmp_ufs_priv *qmp)
+{
+	const struct qmp_ufs_cfg *cfg = qmp->cfg;
+	const struct qmp_ufs_offsets *offs = cfg->offsets;
+	struct resource res;
+	void __iomem *base;
+
+	if (!offs)
+		return -EINVAL;
+
+	dev_read_resource(qmp->dev, 0, &res);
+	base = devm_ioremap(qmp->dev, res.start, resource_size(&res));
+	if (IS_ERR(base))
+		return PTR_ERR(base);
+
+	qmp->serdes = qmp->base + qmp->cfg->offsets->serdes;
+	qmp->pcs = qmp->base + qmp->cfg->offsets->pcs;
+	qmp->tx = qmp->base + qmp->cfg->offsets->tx;
+	qmp->rx = qmp->base + qmp->cfg->offsets->rx;
+
+	if (qmp->cfg->lanes >= 2) {
+		qmp->tx2 = qmp->base + qmp->cfg->offsets->tx2;
+		qmp->rx2 = qmp->base + qmp->cfg->offsets->rx2;
+	}
+
+	return 0;
+}
+
 static int qmp_ufs_probe(struct udevice *dev)
 {
 	struct qmp_ufs_priv *qmp = dev_get_priv(dev);
+	ofnode dp;
 	int ret;
+
+	dp = dev_ofnode(dev);
 
 #ifdef DEBUG_QMP
 	debug_qmp("%s: Entered function\n", __func__);
@@ -799,29 +886,39 @@ static int qmp_ufs_probe(struct udevice *dev)
 		return -EINVAL;
 
 	ret = qmp_ufs_clk_init(dev, qmp);
-	if (ret)
+	if (ret) {
+		printf("%s: failed to get UFS clks\n", __func__);
 		return ret;
+	}
 
 	ret = qmp_ufs_vreg_init(dev, qmp);
-	if (ret)
+	if (ret) {
+		printf("%s: failed to get UFS voltage regulators\n", __func__);
 		return ret;
+	}
 
 	ret = qmp_ufs_reset_init(dev, qmp);
-	if (ret)
+	if (ret) {
+		printf("%s: failed to get UFS resets\n", __func__);
 		return ret;
+	}
+
+	qmp->dev = dev;
 
 #ifdef DEBUG_QMP
 	debug_qmp("%s: Acquired clks and resets\n", __func__);
 #endif
 
-	qmp->serdes = qmp->base + qmp->cfg->offsets->serdes;
-	qmp->pcs = qmp->base + qmp->cfg->offsets->pcs;
-	qmp->tx = qmp->base + qmp->cfg->offsets->tx;
-	qmp->rx = qmp->base + qmp->cfg->offsets->rx;
+	/* Check for legacy binding with child node. */
+	if (ofnode_device_is_compatible(dp, "qcom,sm8250-qmp-ufs-phy")) {
+		ret = qmp_ufs_parse_dt_legacy(qmp, dp.np);
+	} else {
+		ret = qmp_ufs_parse_dt(qmp);
+	}
 
-	if (qmp->cfg->lanes >= 2) {
-		qmp->tx2 = qmp->base + qmp->cfg->offsets->tx2;
-		qmp->rx2 = qmp->base + qmp->cfg->offsets->rx2;
+	if (ret) {
+		printf("%s: failed to get UFS dt regs\n", __func__);
+		return ret;
 	}
 
 #ifdef DEBUG_QMP
