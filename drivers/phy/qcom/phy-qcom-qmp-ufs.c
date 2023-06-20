@@ -394,7 +394,6 @@ struct qmp_ufs_cfg {
 struct qmp_ufs_priv {
 	struct phy *phy;
 
-	void __iomem *base;
 	void __iomem *serdes;
 	void __iomem *pcs;
 	void __iomem *pcs_misc;
@@ -423,7 +422,6 @@ struct qmp_ufs_priv {
 #ifdef DEBUG_QMP
 #define debug_qmp printf
 static unsigned int writel_count = 0;
-static unsigned int readl_count = 0;
 #endif
 
 static inline void qphy_setbits(void __iomem *base, u32 offset, u32 val)
@@ -431,12 +429,6 @@ static inline void qphy_setbits(void __iomem *base, u32 offset, u32 val)
 	u32 reg;
 
 	reg = readl(base + offset);
-
-#ifdef DEBUG_QMP
-	debug_qmp("%s: readl_cnt=%u, reg=0x%p, val=0x%x\n",
-			__func__, readl_count++, base + offset, reg);
-#endif
-
 	reg |= val;
 	writel(reg, base + offset);
 
@@ -446,12 +438,7 @@ static inline void qphy_setbits(void __iomem *base, u32 offset, u32 val)
 #endif
 
 	/* ensure that above write is through */
-	reg = readl(base + offset);
-
-#ifdef DEBUG_QMP
-	debug_qmp("%s: readl_cnt=%u, reg=0x%p, val=0x%x\n",
-			__func__, readl_count++, base + offset, reg);
-#endif
+	readl(base + offset);
 }
 
 static inline void qphy_clrbits(void __iomem *base, u32 offset, u32 val)
@@ -459,12 +446,6 @@ static inline void qphy_clrbits(void __iomem *base, u32 offset, u32 val)
 	u32 reg;
 
 	reg = readl(base + offset);
-
-#ifdef DEBUG_QMP
-	debug_qmp("%s: readl_cnt=%u, reg=0x%p, val=0x%x\n",
-			__func__, readl_count++, base + offset, reg);
-#endif
-
 	reg &= ~val;
 	writel(reg, base + offset);
 
@@ -474,12 +455,7 @@ static inline void qphy_clrbits(void __iomem *base, u32 offset, u32 val)
 #endif
 
 	/* ensure that above write is through */
-	reg = readl(base + offset);
-
-#ifdef DEBUG_QMP
-	debug_qmp("%s: readl_cnt=%u, reg=0x%p, val=0x%x\n",
-			__func__, readl_count++, base + offset, reg);
-#endif
+	readl(base + offset);
 }
 
 /* list of clocks required by phy */
@@ -586,6 +562,10 @@ static void qmp_ufs_configure_lane(void __iomem *base,
 			continue;
 
 		writel(t->val, base + t->offset);
+#ifdef DEBUG_QMP
+		debug_qmp("%s: writel_cnt=%u, reg=0x%p, val=0x%x\n",
+			__func__, writel_count++, base + t->offset, t->val);
+#endif
 	}
 }
 
@@ -627,15 +607,13 @@ static void qmp_ufs_pcs_init(struct qmp_ufs_priv *qmp, const struct qmp_ufs_cfg_
 
 static void qmp_ufs_init_registers(struct qmp_ufs_priv *qmp, const struct qmp_ufs_cfg *cfg)
 {
+	/* We support mode = PHY_MODE_UFS_HS_B and submode UFS_HS_G4 for now. */
 	qmp_ufs_serdes_init(qmp, &cfg->tbls);
-	if (qmp->mode == PHY_MODE_UFS_HS_B)
-		qmp_ufs_serdes_init(qmp, &cfg->tbls_hs_b);
+	qmp_ufs_serdes_init(qmp, &cfg->tbls_hs_b);
 	qmp_ufs_lanes_init(qmp, &cfg->tbls);
-	if (qmp->submode == UFS_HS_G4)
-		qmp_ufs_lanes_init(qmp, &cfg->tbls_hs_g4);
+	qmp_ufs_lanes_init(qmp, &cfg->tbls_hs_g4);
 	qmp_ufs_pcs_init(qmp, &cfg->tbls);
-	if (qmp->submode == UFS_HS_G4)
-		qmp_ufs_pcs_init(qmp, &cfg->tbls_hs_g4);
+	qmp_ufs_pcs_init(qmp, &cfg->tbls_hs_g4);
 }
 
 static int qmp_ufs_do_reset(struct qmp_ufs_priv *qmp)
@@ -656,6 +634,8 @@ static int qmp_ufs_do_reset(struct qmp_ufs_priv *qmp)
 			return ret;
 	}
 
+	udelay(50);
+
 	return 0;
 }
 
@@ -668,12 +648,20 @@ static int qmp_ufs_power_on(struct phy *phy)
 	unsigned int val;
 	int ret;
 
+#ifdef DEBUG_QMP
+	debug_qmp("%s: Entered function\n", __func__);
+#endif
+	/* Power down PHY */
+	qphy_setbits(pcs, cfg->regs[QPHY_PCS_POWER_DOWN_CONTROL], SW_PWRDN);
+
 	qmp_ufs_init_registers(qmp, cfg);
 
-	ret = qmp_ufs_do_reset(qmp);
-	if (ret) {
-		printf("%s: qmp reset failed\n", __func__);
-		return ret;
+	if (cfg->no_pcs_sw_reset) {
+		ret = qmp_ufs_do_reset(qmp);
+		if (ret) {
+			printf("%s: qmp reset failed\n", __func__);
+			return ret;
+		}
 	}
 
 	/* Pull PHY out of reset state */
@@ -690,6 +678,9 @@ static int qmp_ufs_power_on(struct phy *phy)
 		return ret;
 	}
 
+#ifdef DEBUG_QMP
+	debug_qmp("%s: Exiting function with success\n", __func__);
+#endif
 	return 0;
 }
 
@@ -787,15 +778,13 @@ clk_get_err:
 	return ret;
 }
 
-static int qmp_ufs_parse_dt_legacy(struct qmp_ufs_priv *qmp, struct device_node *np)
+static int qmp_ufs_probe_generic_child(struct udevice *dev,
+				       ofnode child)
 {
+	struct qmp_ufs_priv *qmp = dev_get_priv(dev);
 	const struct qmp_ufs_cfg *cfg = qmp->cfg;
 	struct resource res;
-
-	dev_read_resource(qmp->dev, 0, &res);
-	qmp->serdes = devm_ioremap(qmp->dev, res.start, resource_size(&res));
-	if (IS_ERR(qmp->serdes))
-		return PTR_ERR(qmp->serdes);
+	int ret;
 
 	/*
 	 * Get memory resources for the PHY:
@@ -803,63 +792,79 @@ static int qmp_ufs_parse_dt_legacy(struct qmp_ufs_priv *qmp, struct device_node 
 	 * For dual lane PHYs: tx2 -> 3, rx2 -> 4, pcs_misc (optional) -> 5
 	 * For single lane PHYs: pcs_misc (optional) -> 3.
 	 */
-	dev_read_resource(qmp->dev, 1, &res);
-	qmp->tx = devm_ioremap(qmp->dev, res.start, resource_size(&res));
-	if (IS_ERR(qmp->tx))
-		return PTR_ERR(qmp->tx);
-
-	dev_read_resource(qmp->dev, 2, &res);
-	qmp->rx = devm_ioremap(qmp->dev, res.start, resource_size(&res));
-	if (IS_ERR(qmp->rx))
-		return PTR_ERR(qmp->rx);
-
-	if (cfg->lanes >= 2) {
-		dev_read_resource(qmp->dev, 3, &res);
-		qmp->tx2 = devm_ioremap(qmp->dev, res.start, resource_size(&res));
-		if (IS_ERR(qmp->tx2))
-			return PTR_ERR(qmp->tx2);
-
-		dev_read_resource(qmp->dev, 4, &res);
-		qmp->rx2 = devm_ioremap(qmp->dev, res.start, resource_size(&res));
-		if (IS_ERR(qmp->rx2))
-			return PTR_ERR(qmp->rx2);
-
-		dev_read_resource(qmp->dev, 5, &res);
-		qmp->pcs_misc = devm_ioremap(qmp->dev, res.start, resource_size(&res));
-	} else {
-		dev_read_resource(qmp->dev, 3, &res);
-		qmp->pcs_misc = devm_ioremap(qmp->dev, res.start, resource_size(&res));
+	ret = ofnode_read_resource(child, 0, &res);
+	if (ret) {
+		dev_err(dev, "can't get reg property of child %s\n",
+			ofnode_get_name(child));
+		return ret;
 	}
 
-	if (IS_ERR(qmp->pcs_misc))
-		dev_dbg(qmp->dev, "PHY pcs_misc-reg not used\n");
+	qmp->tx = (void __iomem *)res.start;
+
+	ret = ofnode_read_resource(child, 1, &res);
+	if (ret) {
+		dev_err(dev, "can't get reg property of child %s\n",
+			ofnode_get_name(child));
+		return ret;
+	}
+
+	qmp->rx = (void __iomem *)res.start;
+
+	ret = ofnode_read_resource(child, 2, &res);
+	if (ret) {
+		dev_err(dev, "can't get reg property of child %s\n",
+			ofnode_get_name(child));
+		return ret;
+	}
+
+	qmp->pcs = (void __iomem *)res.start;
+
+	if (cfg->lanes >= 2) {
+		ret = ofnode_read_resource(child, 3, &res);
+		if (ret) {
+			dev_err(dev, "can't get reg property of child %s\n",
+				ofnode_get_name(child));
+			return ret;
+		}
+
+		qmp->tx2 = (void __iomem *)res.start;
+
+		ret = ofnode_read_resource(child, 4, &res);
+		if (ret) {
+			dev_err(dev, "can't get reg property of child %s\n",
+				ofnode_get_name(child));
+			return ret;
+		}
+
+		qmp->rx2 = (void __iomem *)res.start;
+
+		ret = ofnode_read_resource(child, 5, &res);
+		if (ret)
+			qmp->pcs_misc = NULL;
+	} else {
+		ret = ofnode_read_resource(child, 3, &res);
+		if (ret)
+			qmp->pcs_misc = NULL;
+	}
+
+	if (!qmp->pcs_misc)
+		dev_warn(qmp->dev, "PHY pcs_misc-reg not used\n");
 
 	return 0;
 }
 
-static int qmp_ufs_parse_dt(struct qmp_ufs_priv *qmp)
+static int qmp_ufs_probe_dt_children(struct udevice *dev)
 {
-	const struct qmp_ufs_cfg *cfg = qmp->cfg;
-	const struct qmp_ufs_offsets *offs = cfg->offsets;
-	struct resource res;
-	void __iomem *base;
+	int ret;
+	ofnode child;
 
-	if (!offs)
-		return -EINVAL;
-
-	dev_read_resource(qmp->dev, 0, &res);
-	base = devm_ioremap(qmp->dev, res.start, resource_size(&res));
-	if (IS_ERR(base))
-		return PTR_ERR(base);
-
-	qmp->serdes = qmp->base + qmp->cfg->offsets->serdes;
-	qmp->pcs = qmp->base + qmp->cfg->offsets->pcs;
-	qmp->tx = qmp->base + qmp->cfg->offsets->tx;
-	qmp->rx = qmp->base + qmp->cfg->offsets->rx;
-
-	if (qmp->cfg->lanes >= 2) {
-		qmp->tx2 = qmp->base + qmp->cfg->offsets->tx2;
-		qmp->rx2 = qmp->base + qmp->cfg->offsets->rx2;
+	ofnode_for_each_subnode(child, dev_ofnode(dev)) {
+		ret = qmp_ufs_probe_generic_child(dev, child);
+		if (ret) {
+			dev_err(dev, "Cannot parse child %s:%d\n",
+				ofnode_get_name(child), ret);
+			return ret;
+		}
 	}
 
 	return 0;
@@ -877,9 +882,9 @@ static int qmp_ufs_probe(struct udevice *dev)
 	debug_qmp("%s: Entered function\n", __func__);
 #endif
 
-	qmp->base = (void __iomem *)dev_read_addr(dev);
-	if (IS_ERR(qmp->base))
-		return PTR_ERR(qmp->base);
+	qmp->serdes = (void __iomem *)dev_read_addr(dev);
+	if (IS_ERR(qmp->serdes))
+		return PTR_ERR(qmp->serdes);
 
 	qmp->cfg = (const struct qmp_ufs_cfg *)dev_get_driver_data(dev);
 	if (!qmp->cfg)
@@ -897,23 +902,21 @@ static int qmp_ufs_probe(struct udevice *dev)
 		return ret;
 	}
 
-	ret = qmp_ufs_reset_init(dev, qmp);
-	if (ret) {
-		printf("%s: failed to get UFS resets\n", __func__);
-		return ret;
+	if (qmp->cfg->no_pcs_sw_reset) {
+		ret = qmp_ufs_reset_init(dev, qmp);
+		if (ret) {
+			printf("%s: failed to get UFS resets\n", __func__);
+			return ret;
+		}
 	}
 
 	qmp->dev = dev;
 
-#ifdef DEBUG_QMP
-	debug_qmp("%s: Acquired clks and resets\n", __func__);
-#endif
-
 	/* Check for legacy binding with child node. */
 	if (ofnode_device_is_compatible(dp, "qcom,sm8250-qmp-ufs-phy")) {
-		ret = qmp_ufs_parse_dt_legacy(qmp, dp.np);
+		ret = qmp_ufs_probe_dt_children(dev);
 	} else {
-		ret = qmp_ufs_parse_dt(qmp);
+		return -ENOTSUPP;
 	}
 
 	if (ret) {
