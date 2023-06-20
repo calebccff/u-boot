@@ -55,7 +55,6 @@ static int ufs_qcom_clk_get(struct udevice *dev,
 	struct clk *clk;
 	int err = 0;
 
-	printf("%s: Entered function\n", __func__);
 	clk = devm_clk_get(dev, name);
 	if (!IS_ERR(clk)) {
 		*clk_out = clk;
@@ -72,7 +71,6 @@ static int ufs_qcom_clk_get(struct udevice *dev,
 	if (err != -EPROBE_DEFER)
 		dev_err(dev, "failed to get %s err %d\n", name, err);
 
-	printf("%s: Exiting function with success\n", __func__);
 	return err;
 }
 
@@ -81,12 +79,10 @@ static int ufs_qcom_clk_enable(struct udevice *dev,
 {
 	int err = 0;
 
-	printf("%s: Entered function\n", __func__);
 	err = clk_prepare_enable(clk);
 	if (err)
 		dev_err(dev, "%s: %s enable failed %d\n", __func__, name, err);
 
-	printf("%s: Exiting function with success\n", __func__);
 	return err;
 }
 
@@ -109,15 +105,18 @@ static int ufs_qcom_enable_lane_clks(struct ufs_qcom_priv *priv)
 	if (err)
 		goto disable_rx_l0;
 
-	err = ufs_qcom_clk_enable(dev, "rx_lane1_sync_clk",
-			priv->rx_l1_sync_clk);
-	if (err)
-		goto disable_tx_l0;
+	/* In case of single lane per direction, don't read lane1 clocks */
+	if (priv->hba->lanes_per_direction > 1) {
+		err = ufs_qcom_clk_enable(dev, "rx_lane1_sync_clk",
+				priv->rx_l1_sync_clk);
+		if (err)
+			goto disable_tx_l0;
 
-	err = ufs_qcom_clk_enable(dev, "tx_lane1_sync_clk",
-			priv->tx_l1_sync_clk);
-	if (err)
-		goto disable_rx_l1;
+		err = ufs_qcom_clk_enable(dev, "tx_lane1_sync_clk",
+				priv->tx_l1_sync_clk);
+		if (err)
+			goto disable_rx_l1;
+	}
 
 	priv->is_lane_clks_enabled = true;
 
@@ -131,6 +130,7 @@ disable_tx_l0:
 disable_rx_l0:
 	clk_disable_unprepare(priv->rx_l0_sync_clk);
 
+	printf("%s: Exiting function with error:%d\n", __func__, err);
 	return err;
 }
 
@@ -186,9 +186,11 @@ static int ufs_qcom_enable_core_clks(struct ufs_qcom_priv *priv)
 	if (err)
 		goto disable_bus_aggr_clk;
 
+#if 0
 	err = ufs_qcom_clk_enable(dev, "ref_clk", priv->ref_clk);
 	if (err)
 		goto disable_iface_clk;
+#endif
 
 	priv->is_core_clks_enabled = true;
 
@@ -350,7 +352,6 @@ static int ufs_qcom_setup_clocks(struct ufs_hba *hba, bool on,
 static int ufs_qcom_power_up_sequence(struct ufs_hba *hba)
 {
 	struct ufs_qcom_priv *priv = dev_get_priv(hba->dev);
-	struct phy phy;
 	int ret;
 
 	printf("%s: Entered function\n", __func__);
@@ -360,38 +361,10 @@ static int ufs_qcom_power_up_sequence(struct ufs_hba *hba)
 		dev_warn(hba->dev, "%s: host reset returned %d\n",
 				  __func__, ret);
 
-	/* Get phy */
-	ret = generic_phy_get_by_name(hba->dev, "ufsphy", &phy);
-	if (ret) {
-		dev_err(hba->dev, "%s: failed to get PHY from DT\n", __func__);
-		return ret;
-	}
-
-	/* phy initialization */
-	ret = generic_phy_init(&phy);
-	if (ret) {
-		dev_err(hba->dev, "%s: phy init failed, ret = %d\n",
-			__func__, ret);
-		return ret;
-	}
-
-	/* power on phy */
-	ret = generic_phy_power_on(&phy);
-	if (ret) {
-		dev_err(hba->dev, "%s: phy power on failed, ret = %d\n",
-			__func__, ret);
-		goto out_disable_phy;
-	}
-
 	ufs_qcom_select_unipro_mode(priv);
 
 	printf("%s: Exiting function with success\n", __func__);
 	return 0;
-
-out_disable_phy:
-	generic_phy_exit(&phy);
-
-	return ret;
 }
 
 /*
@@ -439,7 +412,7 @@ static int ufs_qcom_hce_enable_notify(struct ufs_hba *hba,
 		break;
 	}
 	
-	printf("%s: Exiting function with success\n", __func__);
+	printf("%s: Exiting function with success, err:%d\n", __func__, err);
 	return err;
 }
 
@@ -664,6 +637,8 @@ static int ufs_qcom_init(struct ufs_hba *hba)
 
 	ufs_qcom_get_controller_revision(hba, &priv->hw_ver.major,
 		&priv->hw_ver.minor, &priv->hw_ver.step);
+	dev_info(hba->dev, "Qcom UFS HC version: %d.%d.%d\n", priv->hw_ver.major,
+		priv->hw_ver.minor, priv->hw_ver.step);
 
 	err = ufs_qcom_init_core_clks(priv);
 	if (err) {
@@ -705,8 +680,45 @@ static struct ufs_hba_ops ufs_qcom_hba_ops = {
 static int ufs_qcom_probe(struct udevice *dev)
 {
 	struct ufs_qcom_priv *priv = dev_get_priv(dev);
+	struct udevice *phy_dev;
+	struct phy phy;
 	int ret;
 
+	printf("%s: Entered function\n", __func__);
+	if (!IS_ENABLED(CONFIG_PHY_QCOM_QMP_UFS)) {
+		dev_err(dev, "%s: QMP UFS phy driver is not enabled\n", __func__);
+		return -EINVAL;
+	}
+
+	/* get phy */
+	ret = uclass_get_device_by_driver(UCLASS_PHY,
+					  DM_DRIVER_GET(qcom_qmp_ufs),
+					  &phy_dev);
+	if (ret) {
+		dev_err(dev, "%s: failed to get UCLASS_PHY\n", __func__);
+		return ret;
+	}
+
+	phy.dev = phy_dev;
+	phy.id = 0;
+
+	/* phy initialization */
+	ret = generic_phy_init(&phy);
+	if (ret) {
+		dev_err(dev, "%s: phy init failed, ret = %d\n",
+			__func__, ret);
+		return ret;
+	}
+
+	/* power on phy */
+	ret = generic_phy_power_on(&phy);
+	if (ret) {
+		dev_err(dev, "%s: phy power on failed, ret = %d\n",
+			__func__, ret);
+		goto out_disable_phy;
+	}
+
+	/* get resets */
 	ret = reset_get_by_name(dev, "rst", &priv->core_reset);
 	if (ret) {
 		dev_err(dev, "failed to get reset, ret:%d\n", ret);
@@ -719,7 +731,14 @@ static int ufs_qcom_probe(struct udevice *dev)
 		return ret;
 	}
 
+	printf("%s: Exiting function successfully\n", __func__);
 	return 0;
+
+out_disable_phy:
+	generic_phy_exit(&phy);
+
+	printf("%s: Exiting function with ret=%d\n", __func__, ret);
+	return ret;
 }
 
 static int ufs_qcom_bind(struct udevice *dev)
