@@ -1892,12 +1892,7 @@ int ufshcd_probe(struct udevice *ufs_dev, struct ufs_hba_ops *hba_ops)
 
 	/* Get UFS version supported by the controller */
 	hba->version = ufshcd_get_ufs_version(hba);
-	if (hba->version != UFSHCI_VERSION_10 &&
-	    hba->version != UFSHCI_VERSION_11 &&
-	    hba->version != UFSHCI_VERSION_20 &&
-	    hba->version != UFSHCI_VERSION_21)
-		dev_err(hba->dev, "invalid UFS version 0x%x\n",
-			hba->version);
+	dev_info(hba->dev, "UFS version : 0x%x\n", hba->version);
 
 	/* Get Interrupt bit mask per version */
 	hba->intr_mask = ufshcd_get_intr_mask(hba);
