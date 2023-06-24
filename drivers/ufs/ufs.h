@@ -839,10 +839,20 @@ struct ufs_hba {
 #define UFSHCD_QUIRK_REINIT_AFTER_MAX_GEAR_SWITCH	(1 << 19)
 
 	/* Virtual memory reference */
+	struct utp_transfer_cmd_desc *ucdl_base_addr;
+	struct utp_transfer_req_desc *utrdl_base_addr;
+	struct utp_task_req_desc *utmrdl_base_addr;
+#if 0
+	/* Virtual memory reference */
 	struct utp_transfer_cmd_desc *ucdl;
 	struct utp_transfer_req_desc *utrdl;
 	/* TODO: Add Task Manegement Support */
 	struct utp_task_req_desc *utmrdl;
+#endif
+	/* DMA memory reference */
+	dma_addr_t ucdl_dma_addr;
+	dma_addr_t utrdl_dma_addr;
+	dma_addr_t utmrdl_dma_addr;
 
 	struct utp_upiu_req *ucd_req_ptr;
 	struct utp_upiu_rsp *ucd_rsp_ptr;
@@ -880,6 +890,14 @@ static inline int ufshcd_ops_link_startup_notify(struct ufs_hba *hba,
 		return hba->ops->link_startup_notify(hba, status);
 
 	return 0;
+}
+
+static inline bool ufshcd_is_hs_mode(struct ufs_pa_layer_attr *pwr_info)
+{
+	return (pwr_info->pwr_rx == FAST_MODE ||
+		pwr_info->pwr_rx == FASTAUTO_MODE) &&
+		(pwr_info->pwr_tx == FAST_MODE ||
+		pwr_info->pwr_tx == FASTAUTO_MODE);
 }
 
 /* Controller UFSHCI version */
