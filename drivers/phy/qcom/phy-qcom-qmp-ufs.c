@@ -607,13 +607,13 @@ static void qmp_ufs_pcs_init(struct qmp_ufs_priv *qmp, const struct qmp_ufs_cfg_
 
 static void qmp_ufs_init_registers(struct qmp_ufs_priv *qmp, const struct qmp_ufs_cfg *cfg)
 {
-	/* We support mode = PHY_MODE_UFS_HS_B and submode UFS_HS_G4 for now. */
+	/* We support mode = PHY_MODE_UFS_HS_B and submode UFS_HS_G2 for now. */
 	qmp_ufs_serdes_init(qmp, &cfg->tbls);
 	qmp_ufs_serdes_init(qmp, &cfg->tbls_hs_b);
 	qmp_ufs_lanes_init(qmp, &cfg->tbls);
-	qmp_ufs_lanes_init(qmp, &cfg->tbls_hs_g4);
+	//qmp_ufs_lanes_init(qmp, &cfg->tbls_hs_g4);
 	qmp_ufs_pcs_init(qmp, &cfg->tbls);
-	qmp_ufs_pcs_init(qmp, &cfg->tbls_hs_g4);
+	//qmp_ufs_pcs_init(qmp, &cfg->tbls_hs_g4);
 }
 
 static int qmp_ufs_do_reset(struct qmp_ufs_priv *qmp)
@@ -719,6 +719,7 @@ static int qmp_ufs_reset_init(struct udevice *dev, struct qmp_ufs_priv *qmp)
 
 	qmp->reset_count = 0;
 	qmp->resets = devm_kcalloc(dev, num, sizeof(*qmp->resets), GFP_KERNEL);
+	printf("%s: Bhupesh, qmp->resets=0x%p\n", __func__, qmp->resets);
 	if (!qmp->resets)
 		return -ENOMEM;
 
@@ -750,6 +751,7 @@ static int qmp_ufs_clk_init(struct udevice *dev, struct qmp_ufs_priv *qmp)
 
 	qmp->clk_count = 0;
 	qmp->clks = devm_kcalloc(dev, num, sizeof(*qmp->clks), GFP_KERNEL);
+	printf("%s: Bhupesh, qmp->clks=0x%p\n", __func__, qmp->clks);
 	if (!qmp->clks)
 		return -ENOMEM;
 
