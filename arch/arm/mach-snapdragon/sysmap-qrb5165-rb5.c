@@ -16,6 +16,7 @@ static struct mm_region sm8250_mem_map[] = {
 		.attrs = PTE_BLOCK_MEMTYPE(MT_DEVICE_NGNRNE) |
 			 PTE_BLOCK_NON_SHARE |
 			 PTE_BLOCK_PXN | PTE_BLOCK_UXN
+#if 0
 	}, {
 		.virt = 0x80000000UL, /* DDR */
 		.phys = 0x80000000UL, /* DDR */
@@ -23,6 +24,21 @@ static struct mm_region sm8250_mem_map[] = {
 		.attrs = PTE_BLOCK_MEMTYPE(MT_NORMAL) |
 			 PTE_BLOCK_INNER_SHARE
 	},
+#else
+	}, {
+		.virt = 0x89600000UL, /* DDR */
+		.phys = 0x89600000UL, /* DDR */
+		.size = 0x162000000UL,
+		.attrs = PTE_BLOCK_MEMTYPE(MT_NORMAL_NC) |
+			 PTE_BLOCK_INNER_SHARE
+	}, {
+		.virt = 0xa0000000UL, /* DDR */
+		.phys = 0xa0000000UL, /* DDR */
+		.size = 0x20000000UL,
+		.attrs = PTE_BLOCK_MEMTYPE(MT_NORMAL_NC) |
+			 PTE_BLOCK_INNER_SHARE
+	},
+#endif
 	/* Terminator */
 	{ 0 }
 };
