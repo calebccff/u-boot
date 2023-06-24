@@ -220,6 +220,11 @@ struct ufs_qcom_priv {
 
 	int esi_base;
 	bool esi_enabled;
+
+	void __iomem *dev_ref_clk_ctrl_mmio;
+	bool is_dev_ref_clk_enabled;
+
+	u32 dev_ref_clk_en_mask;
 };
 
 static inline u32
