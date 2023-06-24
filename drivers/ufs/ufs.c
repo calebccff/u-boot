@@ -50,6 +50,7 @@
 
 /* Only use one Task Tag for all requests */
 #define TASK_TAG	0
+//#define TASK_TAG	31
 
 /* Expose the flag value from utp_upiu_query.value */
 #define MASK_QUERY_UPIU_FLAG_LOC 0xFF
@@ -180,7 +181,7 @@ static int ufshcd_send_uic_cmd(struct ufs_hba *hba, struct uic_command *uic_cmd)
 		return -EIO;
 	}
 
-	debug("sending uic command:%d\n", uic_cmd->command);
+	printf("sending uic command:%d\n", uic_cmd->command);
 
 	/* Write Args */
 	ufshcd_writel(hba, uic_cmd->argument1, REG_UIC_COMMAND_ARG_1);
@@ -215,7 +216,7 @@ static int ufshcd_send_uic_cmd(struct ufs_hba *hba, struct uic_command *uic_cmd)
 	uic_cmd->argument2 = ufshcd_get_uic_cmd_result(hba);
 	uic_cmd->argument3 = ufshcd_get_dme_attr_val(hba);
 
-	debug("Sent successfully\n");
+	printf("Sent successfully\n");
 
 	return 0;
 }
@@ -246,7 +247,7 @@ int ufshcd_dme_set_attr(struct ufs_hba *hba, u32 attr_sel, u8 attr_set,
 		/* for peer attributes we retry upon failure */
 		ret = ufshcd_send_uic_cmd(hba, &uic_cmd);
 		if (ret)
-			dev_dbg(hba->dev, "%s: attr-id 0x%x val 0x%x error code %d\n",
+			dev_info(hba->dev, "%s: attr-id 0x%x val 0x%x error code %d\n",
 				set, UIC_GET_ATTR_ID(attr_sel), mib_val, ret);
 	} while (ret && peer && --retries);
 
@@ -346,7 +347,7 @@ static int ufshcd_dme_link_startup(struct ufs_hba *hba)
 
 	ret = ufshcd_send_uic_cmd(hba, &uic_cmd);
 	if (ret)
-		dev_dbg(hba->dev,
+		dev_err(hba->dev,
 			"dme-link-startup: error code %d\n", ret);
 	return ret;
 }
@@ -365,6 +366,7 @@ static inline void ufshcd_disable_intr_aggr(struct ufs_hba *hba)
  */
 static inline int ufshcd_get_lists_status(u32 reg)
 {
+	printf("%s: read value=0x%x from reg UFS_MEM_HCS\n", __func__, readl(0x1D84030));
 	return !((reg & UFSHCD_STATUS_READY) == UFSHCD_STATUS_READY);
 }
 
@@ -375,6 +377,7 @@ static inline int ufshcd_get_lists_status(u32 reg)
  */
 static void ufshcd_enable_run_stop_reg(struct ufs_hba *hba)
 {
+	printf("%s: Entered function\n", __func__);
 	ufshcd_writel(hba, UTP_TASK_REQ_LIST_RUN_STOP_BIT,
 		      REG_UTP_TASK_REQ_LIST_RUN_STOP);
 	ufshcd_writel(hba, UTP_TRANSFER_REQ_LIST_RUN_STOP_BIT,
@@ -389,6 +392,7 @@ static void ufshcd_enable_intr(struct ufs_hba *hba, u32 intrs)
 	u32 set = ufshcd_readl(hba, REG_INTERRUPT_ENABLE);
 	u32 rw;
 
+	printf("%s: Entered function\n", __func__);
 	if (hba->version == UFSHCI_VERSION_10) {
 		rw = set & INTERRUPT_MASK_RW_VER_10;
 		set = rw | ((set ^ intrs) & intrs);
@@ -416,21 +420,31 @@ static int ufshcd_make_hba_operational(struct ufs_hba *hba)
 	int err = 0;
 	u32 reg;
 
+	printf("%s: Entered function\n", __func__);
 	/* Enable required interrupts */
 	ufshcd_enable_intr(hba, UFSHCD_ENABLE_INTRS);
 
+	printf("%s: Marker 1\n", __func__);
 	/* Disable interrupt aggregation */
 	ufshcd_disable_intr_aggr(hba);
 
+	printf("%s: Marker 2 (dma_addr_t)hba->utrd=0x%llx, lower_32_bits((dma_addr_t)hba->utrdl)=0x%x, upper_32_bits((dma_addr_t)hba->utrdl=0x%x\n", __func__, hba->utrdl_dma_addr, lower_32_bits(hba->utrdl_dma_addr), upper_32_bits(hba->utrdl_dma_addr));
 	/* Configure UTRL and UTMRL base address registers */
-	ufshcd_writel(hba, lower_32_bits((dma_addr_t)hba->utrdl),
+	ufshcd_writel(hba, lower_32_bits(hba->utrdl_dma_addr),
 		      REG_UTP_TRANSFER_REQ_LIST_BASE_L);
-	ufshcd_writel(hba, upper_32_bits((dma_addr_t)hba->utrdl),
+	ufshcd_writel(hba, upper_32_bits(hba->utrdl_dma_addr),
 		      REG_UTP_TRANSFER_REQ_LIST_BASE_H);
-	ufshcd_writel(hba, lower_32_bits((dma_addr_t)hba->utmrdl),
+	ufshcd_writel(hba, lower_32_bits(hba->utmrdl_dma_addr),
 		      REG_UTP_TASK_REQ_LIST_BASE_L);
-	ufshcd_writel(hba, upper_32_bits((dma_addr_t)hba->utmrdl),
+	ufshcd_writel(hba, upper_32_bits(hba->utmrdl_dma_addr),
 		      REG_UTP_TASK_REQ_LIST_BASE_H);
+
+	printf("%s: Marker 3\n", __func__);
+	/*
+	 * Make sure base address and interrupt setup are updated before
+	 * enabling the run/stop registers below.
+	 */
+	wmb();
 
 	/*
 	 * UCRDY, UTMRLDY and UTRLRDY bits must be 1
@@ -445,6 +459,8 @@ static int ufshcd_make_hba_operational(struct ufs_hba *hba)
 		goto out;
 	}
 
+	wmb();
+	printf("%s: Marker 4\n", __func__);
 out:
 	return err;
 }
@@ -476,34 +492,46 @@ link_startup:
 		 * but we can't be sure if the link is up until link startup
 		 * succeeds. So reset the local Uni-Pro and try again.
 		 */
-		if (ret && ufshcd_hba_enable(hba))
+		if (ret && retries && ufshcd_hba_enable(hba)) {
+			dev_err(hba->dev, "%s: DME link lost\n", __func__);
 			goto out;
+		}
 	} while (ret && retries--);
 
-	if (ret)
+	if (ret) {
 		/* failed to get the link up... retire */
+		dev_err(hba->dev, "%s: failed to get the link up... retire\n", __func__);
 		goto out;
+	}
 
 	if (link_startup_again) {
 		link_startup_again = false;
 		retries = DME_LINKSTARTUP_RETRIES;
+		dev_err(hba->dev, "%s: trying link startup again\n", __func__);
 		goto link_startup;
 	}
 
 	/* Mark that link is up in PWM-G1, 1-lane, SLOW-AUTO mode */
 	ufshcd_init_pwr_info(hba);
 
+	dev_err(hba->dev, "%s: trying to check for broken LCC\n", __func__);
 	if (hba->quirks & UFSHCD_QUIRK_BROKEN_LCC) {
 		ret = ufshcd_disable_device_tx_lcc(hba);
-		if (ret)
+		if (ret) {
+			dev_err(hba->dev, "%s: Disable TX LCC failed\n", __func__);
 			goto out;
+		}
 	}
 
 	/* Include any host controller configuration via UIC commands */
 	ret = ufshcd_ops_link_startup_notify(hba, POST_CHANGE);
-	if (ret)
+	if (ret) {
+		dev_err(hba->dev, "%s: link startup notify (POST CHANGE) failed\n", __func__);
 		goto out;
+	}
 
+	/* Clear UECPA once due to LINERESET has happened during LINK_STARTUP */
+	ufshcd_readl(hba, REG_UIC_ERROR_CODE_PHY_ADAPTER_LAYER);
 	ret = ufshcd_make_hba_operational(hba);
 out:
 	if (ret)
@@ -603,8 +631,8 @@ static void ufshcd_host_memory_configure(struct ufs_hba *hba)
 	u16 response_offset;
 	u16 prdt_offset;
 
-	utrdlp = hba->utrdl;
-	cmd_desc_dma_addr = (dma_addr_t)hba->ucdl;
+	utrdlp = hba->utrdl_base_addr;
+	cmd_desc_dma_addr = hba->ucdl_dma_addr;
 
 	utrdlp->command_desc_base_addr_lo =
 				cpu_to_le32(lower_32_bits(cmd_desc_dma_addr));
@@ -618,11 +646,11 @@ static void ufshcd_host_memory_configure(struct ufs_hba *hba)
 	utrdlp->prd_table_offset = cpu_to_le16(prdt_offset >> 2);
 	utrdlp->response_upiu_length = cpu_to_le16(ALIGNED_UPIU_SIZE >> 2);
 
-	hba->ucd_req_ptr = (struct utp_upiu_req *)hba->ucdl;
+	hba->ucd_req_ptr = (struct utp_upiu_req *)hba->ucdl_base_addr;
 	hba->ucd_rsp_ptr =
-		(struct utp_upiu_rsp *)&hba->ucdl->response_upiu;
+		(struct utp_upiu_rsp *)&hba->ucdl_base_addr->response_upiu;
 	hba->ucd_prdt_ptr =
-		(struct ufshcd_sg_entry *)&hba->ucdl->prd_table;
+		(struct ufshcd_sg_entry *)&hba->ucdl_base_addr->prd_table;
 }
 
 /**
@@ -633,7 +661,8 @@ static int ufshcd_memory_alloc(struct ufs_hba *hba)
 	/* Allocate one Transfer Request Descriptor
 	 * Should be aligned to 1k boundary.
 	 */
-	hba->utrdl = memalign(1024, sizeof(struct utp_transfer_req_desc));
+#if 0
+	hba->utrdl = memalign(ARCH_DMA_MINALIGN, /*1024,*/ sizeof(struct utp_transfer_req_desc));
 	if (!hba->utrdl) {
 		dev_err(hba->dev, "Transfer Descriptor memory allocation failed\n");
 		return -ENOMEM;
@@ -647,6 +676,44 @@ static int ufshcd_memory_alloc(struct ufs_hba *hba)
 		dev_err(hba->dev, "Command descriptor memory allocation failed\n");
 		return -ENOMEM;
 	}
+
+	/* Allocate one Task Management Descriptor
+	 * Should be aligned to 1k boundary.
+	 */
+	hba->utmrdl = memalign(1024, sizeof(struct utp_task_req_desc));
+	if (!hba->utmrdl) {
+		dev_err(hba->dev, "Task Management descriptor memory allocation failed\n");
+		return -ENOMEM;
+	}
+#else
+	hba->utrdl_base_addr = dma_alloc_coherent(sizeof(struct utp_transfer_req_desc),
+		       				   (unsigned long *)&hba->utrdl_dma_addr);
+	if (!hba->utrdl_base_addr || (hba->utrdl_dma_addr & (1024 - 1))) {
+		dev_err(hba->dev,
+			"Transfer Descriptor Memory allocation failed\n");
+		return -ENOMEM;
+	}
+
+	/* Allocate one Command Descriptor
+	 * Should be aligned to 128 byte boundary.
+	 */
+	hba->ucdl_base_addr = dma_alloc_coherent(sizeof(struct utp_transfer_cmd_desc),
+		       				 (unsigned long *)&hba->ucdl_dma_addr);
+	if (!hba->ucdl_base_addr || (hba->ucdl_dma_addr & (128 - 1))) {
+		dev_err(hba->dev, "Command descriptor memory allocation failed\n");
+		return -ENOMEM;
+	}
+
+	/* Allocate one Task Management Descriptor
+	 * Should be aligned to 1k boundary.
+	 */
+	hba->utmrdl_base_addr = dma_alloc_coherent(sizeof(struct utp_task_req_desc),
+						    (unsigned long *)&hba->utmrdl_dma_addr);
+	if (!hba->utmrdl_base_addr || (hba->utmrdl_dma_addr & (1024 - 1))) {
+		dev_err(hba->dev, "Task Management Descriptor Memory allocation failed\n");
+		return -ENOMEM;
+	}
+#endif
 
 	return 0;
 }
@@ -774,8 +841,11 @@ static inline void ufshcd_prepare_utp_nop_upiu(struct ufs_hba *hba)
 	memset(ucd_req_ptr, 0, sizeof(struct utp_upiu_req));
 
 	/* command descriptor fields */
+
+	/*ucd_req_ptr->header.dword_0 =
+			UPIU_HEADER_DWORD(UPIU_TRANSACTION_NOP_OUT, 0, 0, 0x1f);*/
 	ucd_req_ptr->header.dword_0 =
-			UPIU_HEADER_DWORD(UPIU_TRANSACTION_NOP_OUT, 0, 0, 0x1f);
+			UPIU_HEADER_DWORD(UPIU_TRANSACTION_NOP_OUT, 0, 0, TASK_TAG);
 	/* clear rest of the fields of basic header */
 	ucd_req_ptr->header.dword_1 = 0;
 	ucd_req_ptr->header.dword_2 = 0;
@@ -792,7 +862,7 @@ static int ufshcd_comp_devman_upiu(struct ufs_hba *hba,
 {
 	u32 upiu_flags;
 	int ret = 0;
-	struct utp_transfer_req_desc *req_desc = hba->utrdl;
+	struct utp_transfer_req_desc *req_desc = hba->utrdl_base_addr;
 
 	hba->dev_cmd.type = cmd_type;
 
@@ -816,11 +886,20 @@ static int ufshcd_send_command(struct ufs_hba *hba, unsigned int task_tag)
 	unsigned long start;
 	u32 intr_status;
 	u32 enabled_intr_status;
+	int val;
 
-	ufshcd_writel(hba, 1 << task_tag, REG_UTP_TRANSFER_REQ_DOOR_BELL);
+	printf("%s: Entered function\n", __func__);
+	val = ufshcd_readl(hba, REG_UTP_TRANSFER_REQ_DOOR_BELL);
+	printf("%s: Read reg=0x%p, val=0x%x\n", __func__, hba->mmio_base + REG_UTP_TRANSFER_REQ_DOOR_BELL, val);
 
+	printf("%s: reg=0x%p, val=0x%x\n", __func__, hba->mmio_base + REG_UTP_TRANSFER_REQ_DOOR_BELL, (1 << task_tag));
+	ufshcd_writel(hba, (1 << task_tag), REG_UTP_TRANSFER_REQ_DOOR_BELL);
+
+	printf("%s: Writing to REG_UTP_TRANSFER_REQ_DOOR_BELL ok\n", __func__);
+	udelay(500);
 	start = get_timer(0);
 	do {
+		printf("%s: Reading from INTR STATUS reg\n", __func__);
 		intr_status = ufshcd_readl(hba, REG_INTERRUPT_STATUS);
 		enabled_intr_status = intr_status & hba->intr_mask;
 		ufshcd_writel(hba, intr_status, REG_INTERRUPT_STATUS);
@@ -857,7 +936,7 @@ static inline int ufshcd_get_req_rsp(struct utp_upiu_rsp *ucd_rsp_ptr)
  */
 static inline int ufshcd_get_tr_ocs(struct ufs_hba *hba)
 {
-	return le32_to_cpu(hba->utrdl->header.dword_2) & MASK_OCS;
+	return le32_to_cpu(hba->utrdl_base_addr->header.dword_2) & MASK_OCS;
 }
 
 static inline int ufshcd_get_rsp_upiu_result(struct utp_upiu_rsp *ucd_rsp_ptr)
@@ -920,20 +999,24 @@ static int ufshcd_exec_dev_cmd(struct ufs_hba *hba, enum dev_cmd_type cmd_type,
 	int err;
 	int resp;
 
+	printf("%s: Entered function\n", __func__);
 	err = ufshcd_comp_devman_upiu(hba, cmd_type);
 	if (err)
 		return err;
 
+	printf("%s: Sending command\n", __func__);
 	err = ufshcd_send_command(hba, TASK_TAG);
 	if (err)
 		return err;
 
+	printf("%s: get tr ocs\n", __func__);
 	err = ufshcd_get_tr_ocs(hba);
 	if (err) {
 		dev_err(hba->dev, "Error in OCS:%d\n", err);
 		return -EINVAL;
 	}
 
+	printf("%s: get resp\n", __func__);
 	resp = ufshcd_get_req_rsp(hba->ucd_rsp_ptr);
 	switch (resp) {
 	case UPIU_TRANSACTION_NOP_IN:
@@ -955,6 +1038,7 @@ static int ufshcd_exec_dev_cmd(struct ufs_hba *hba, enum dev_cmd_type cmd_type,
 			__func__, resp);
 	}
 
+	printf("%s: Exiting successfully\n", __func__);
 	return err;
 }
 
@@ -1418,7 +1502,7 @@ static inline void prepare_prdt_desc(struct ufshcd_sg_entry *entry,
 
 static void prepare_prdt_table(struct ufs_hba *hba, struct scsi_cmd *pccb)
 {
-	struct utp_transfer_req_desc *req_desc = hba->utrdl;
+	struct utp_transfer_req_desc *req_desc = hba->utrdl_base_addr;
 	struct ufshcd_sg_entry *prd_table = hba->ucd_prdt_ptr;
 	ulong datalen = pccb->datalen;
 	int table_length;
@@ -1448,7 +1532,7 @@ static void prepare_prdt_table(struct ufs_hba *hba, struct scsi_cmd *pccb)
 static int ufs_scsi_exec(struct udevice *scsi_dev, struct scsi_cmd *pccb)
 {
 	struct ufs_hba *hba = dev_get_uclass_priv(scsi_dev->parent);
-	struct utp_transfer_req_desc *req_desc = hba->utrdl;
+	struct utp_transfer_req_desc *req_desc = hba->utrdl_base_addr;
 	u32 upiu_flags;
 	int ocs, result = 0;
 	u8 scsi_status;
@@ -1751,18 +1835,21 @@ static int ufshcd_verify_dev_init(struct ufs_hba *hba)
 	int retries;
 	int err;
 
+	printf("%s: Entered function\n", __func__);
 	for (retries = NOP_OUT_RETRIES; retries > 0; retries--) {
 		err = ufshcd_exec_dev_cmd(hba, DEV_CMD_TYPE_NOP,
 					  NOP_OUT_TIMEOUT);
 		if (!err || err == -ETIMEDOUT)
 			break;
 
-		dev_dbg(hba->dev, "%s: error %d retrying\n", __func__, err);
+		dev_err(hba->dev, "%s: error %d retrying\n", __func__, err);
 	}
 
+	printf("%s: Marker 1\n", __func__);
 	if (err)
 		dev_err(hba->dev, "%s: NOP OUT failed %d\n", __func__, err);
 
+	printf("%s: Marker 2\n", __func__);
 	return err;
 }
 
@@ -1775,6 +1862,7 @@ static int ufshcd_complete_dev_init(struct ufs_hba *hba)
 	int err;
 	bool flag_res = 1;
 
+	printf("%s: Entered function\n", __func__);
 	err = ufshcd_query_flag_retry(hba, UPIU_QUERY_OPCODE_SET_FLAG,
 				      QUERY_FLAG_IDN_FDEVICEINIT, NULL);
 	if (err) {
@@ -1881,6 +1969,7 @@ int ufshcd_probe(struct udevice *ufs_dev, struct ufs_hba_ops *hba_ops)
 	hba->dev = ufs_dev;
 	hba->ops = hba_ops;
 	hba->mmio_base = (void *)dev_read_addr(ufs_dev);
+	printf("%s: hba->mmio_base = 0x%p\n", __func__,hba->mmio_base);
 
 	/* Set descriptor lengths to specification defaults */
 	ufshcd_def_desc_sizes(hba);
