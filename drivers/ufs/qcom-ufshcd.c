@@ -30,6 +30,9 @@
 #define USEC_PER_SEC	(1000000L)
 #define NSEC_PER_SEC	(1000000000L)
 
+static unsigned int writel_count = 0;
+static unsigned int readl_count = 0;
+
 enum {
 	TSTBUS_UAWM,
 	TSTBUS_UARM,
@@ -55,9 +58,11 @@ static int ufs_qcom_clk_get(struct udevice *dev,
 	struct clk *clk;
 	int err = 0;
 
+	printf("%s: Entered function\n", __func__);
 	clk = devm_clk_get(dev, name);
 	if (!IS_ERR(clk)) {
 		*clk_out = clk;
+		printf("%s: Exiting function successfully\n", __func__);
 		return 0;
 	}
 
@@ -79,6 +84,7 @@ static int ufs_qcom_clk_enable(struct udevice *dev,
 {
 	int err = 0;
 
+	printf("%s: Entered function\n", __func__);
 	err = clk_prepare_enable(clk);
 	if (err)
 		dev_err(dev, "%s: %s enable failed %d\n", __func__, name, err);
@@ -105,26 +111,16 @@ static int ufs_qcom_enable_lane_clks(struct ufs_qcom_priv *priv)
 	if (err)
 		goto disable_rx_l0;
 
-	/* In case of single lane per direction, don't read lane1 clocks */
-	if (priv->hba->lanes_per_direction > 1) {
-		err = ufs_qcom_clk_enable(dev, "rx_lane1_sync_clk",
-				priv->rx_l1_sync_clk);
-		if (err)
-			goto disable_tx_l0;
-
-		err = ufs_qcom_clk_enable(dev, "tx_lane1_sync_clk",
-				priv->tx_l1_sync_clk);
-		if (err)
-			goto disable_rx_l1;
-	}
+	err = ufs_qcom_clk_enable(dev, "rx_lane1_sync_clk",
+		priv->rx_l1_sync_clk);
+	if (err)
+		goto disable_tx_l0;
 
 	priv->is_lane_clks_enabled = true;
 
 	printf("%s: Exiting function with success\n", __func__);
 	return 0;
 
-disable_rx_l1:
-	clk_disable_unprepare(priv->rx_l1_sync_clk);
 disable_tx_l0:
 	clk_disable_unprepare(priv->tx_l0_sync_clk);
 disable_rx_l0:
@@ -150,16 +146,10 @@ static int ufs_qcom_init_lane_clks(struct ufs_qcom_priv *priv)
 	if (err)
 		return err;
 
-	/* In case of single lane per direction, don't read lane1 clocks */
-	if (priv->hba->lanes_per_direction > 1) {
-		err = ufs_qcom_clk_get(dev, "rx_lane1_sync_clk",
-			&priv->rx_l1_sync_clk, false);
-		if (err)
-			return err;
-
-		err = ufs_qcom_clk_get(dev, "tx_lane1_sync_clk",
-			&priv->tx_l1_sync_clk, true);
-	}
+	err = ufs_qcom_clk_get(dev, "rx_lane1_sync_clk",
+					&priv->rx_l1_sync_clk, false);
+	if (err)
+		return err;
 
 	printf("%s: Exiting function with success\n", __func__);
 	return 0;
@@ -319,6 +309,51 @@ static void ufs_qcom_advertise_quirks(struct ufs_hba *hba)
 	printf("%s: Exiting function with success\n", __func__);
 }
 
+static void ufs_qcom_dev_ref_clk_ctrl(struct ufs_hba *hba, bool enable)
+{
+	struct ufs_qcom_priv *priv = dev_get_priv(hba->dev);
+	
+	if (priv->dev_ref_clk_ctrl_mmio &&
+	    (enable ^ priv->is_dev_ref_clk_enabled)) {
+		u32 temp = readl_relaxed(priv->dev_ref_clk_ctrl_mmio);
+
+		if (enable)
+			temp |= priv->dev_ref_clk_en_mask;
+		else
+			temp &= ~priv->dev_ref_clk_en_mask;
+
+		/*
+		 * If we are here to disable this clock it might be immediately
+		 * after entering into hibern8 in which case we need to make
+		 * sure that device ref_clk is active for specific time after
+		 * hibern8 enter.
+		 */
+		if (!enable) {
+			udelay(10);
+		}
+
+		writel_relaxed(temp, priv->dev_ref_clk_ctrl_mmio);
+		printf("%s: writel_cnt=%u, reg=0x%p, val=0x%x\n",
+			__func__, writel_count++, priv->dev_ref_clk_ctrl_mmio, temp);
+
+		/*
+		 * Make sure the write to ref_clk reaches the destination and
+		 * not stored in a Write Buffer (WB).
+		 */
+		readl(priv->dev_ref_clk_ctrl_mmio);
+
+		/*
+		 * If we call hibern8 exit after this, we need to make sure that
+		 * device ref_clk is stable for at least 1us before the hibern8
+		 * exit command.
+		 */
+		if (enable)
+			udelay(1);
+
+		priv->is_dev_ref_clk_enabled = enable;
+	}
+}
+
 /**
  * ufs_qcom_setup_clocks - enables/disable clocks
  * @hba: host controller instance
@@ -333,8 +368,16 @@ static int ufs_qcom_setup_clocks(struct ufs_hba *hba, bool on,
 	printf("%s: Entered function\n", __func__);
 	switch (status) {
 	case PRE_CHANGE:
+		if (!on) {
+			/* disable device ref_clk */
+			ufs_qcom_dev_ref_clk_ctrl(hba, false);
+		}
 		break;
 	case POST_CHANGE:
+		if (on) {
+			/* enable the device ref clock for HS mode*/
+			ufs_qcom_dev_ref_clk_ctrl(hba, true);
+		}
 		break;
 	}
 
@@ -345,6 +388,7 @@ static int ufs_qcom_setup_clocks(struct ufs_hba *hba, bool on,
 static int ufs_qcom_power_up_sequence(struct ufs_hba *hba)
 {
 	struct ufs_qcom_priv *priv = dev_get_priv(hba->dev);
+	struct phy phy;
 	int ret;
 
 	printf("%s: Entered function\n", __func__);
@@ -354,10 +398,41 @@ static int ufs_qcom_power_up_sequence(struct ufs_hba *hba)
 		dev_warn(hba->dev, "%s: host reset returned %d\n",
 				  __func__, ret);
 
+	/* get phy */
+	ret = generic_phy_get_by_name(hba->dev, "ufsphy", &phy);
+	if (ret) {
+		dev_warn(hba->dev, "%s: Unable to get QMP ufs phy, ret = %d\n",
+			 __func__, ret);
+		return ret;
+	}
+
+	/* phy initialization */
+	ret = generic_phy_init(&phy);
+	if (ret) {
+		dev_err(hba->dev, "%s: phy init failed, ret = %d\n",
+			__func__, ret);
+		return ret;
+	}
+
+	/* power on phy */
+	ret = generic_phy_power_on(&phy);
+	if (ret) {
+		dev_err(hba->dev, "%s: phy power on failed, ret = %d\n",
+			__func__, ret);
+		goto out_disable_phy;
+	}
+
 	ufs_qcom_select_unipro_mode(priv);
 
 	printf("%s: Exiting function with success\n", __func__);
+
 	return 0;
+
+out_disable_phy:
+	generic_phy_exit(&phy);
+
+	printf("%s: Exiting function with error, ret = %d\n", __func__, ret);
+	return ret;
 }
 
 /*
@@ -373,6 +448,11 @@ static void ufs_qcom_enable_hw_clk_gating(struct ufs_hba *hba)
 	ufshcd_writel(hba,
 		ufshcd_readl(hba, REG_UFS_CFG2) | REG_UFS_CFG2_CGC_EN_ALL,
 		REG_UFS_CFG2);
+
+	printf("%s: writel_cnt=%u, reg=0x%p, val=0x%lx\n",
+		__func__, writel_count++, (hba->mmio_base + REG_UFS_CFG2),
+		(ufshcd_readl(hba, REG_UFS_CFG2) | REG_UFS_CFG2_CGC_EN_ALL));
+
 
 	/* Ensure that HW clock gating is enabled before next operations */
 	mb();
@@ -623,51 +703,27 @@ static int ufs_qcom_link_startup_notify(struct ufs_hba *hba,
 static int ufs_qcom_init(struct ufs_hba *hba)
 {
 	struct ufs_qcom_priv *priv = dev_get_priv(hba->dev);
-	struct phy phy;
 	int err;
 
 	printf("%s: Entered function\n", __func__);
 	priv->hba = hba;
 
-	/* get phy */
-	err = generic_phy_get_by_name(hba->dev, "ufsphy", &phy);
-	if (err) {
-		dev_warn(hba->dev, "%s: Unable to get QMP ufs phy, ret = %d\n",
-			 __func__, err);
-		return err;
-	}
-
-	/* phy initialization */
-	err = generic_phy_init(&phy);
-	if (err) {
-		dev_err(hba->dev, "%s: phy init failed, ret = %d\n",
-			__func__, err);
-		return err;
-	}
-
-	/* power on phy */
-	err = generic_phy_power_on(&phy);
-	if (err) {
-		dev_err(hba->dev, "%s: phy power on failed, ret = %d\n",
-			__func__, err);
-		goto out_disable_phy;
-	}
-
+	/* setup clocks */
+	ufs_qcom_setup_clocks(hba, true, PRE_CHANGE);
+	ufs_qcom_setup_clocks(hba, true, POST_CHANGE);
+	
 	ufs_qcom_get_controller_revision(hba, &priv->hw_ver.major,
 		&priv->hw_ver.minor, &priv->hw_ver.step);
 	dev_info(hba->dev, "Qcom UFS HC version: %d.%d.%d\n", priv->hw_ver.major,
 		priv->hw_ver.minor, priv->hw_ver.step);
 
-	err = ufs_qcom_init_core_clks(priv);
-	if (err) {
-		dev_err(hba->dev, "failed to initialize core clocks, err:%d\n", err);
-		return err;
-	}
-
-	err = ufs_qcom_enable_core_clks(priv);
-	if (err) {
-		dev_err(hba->dev, "failed to enable core clocks, err:%d\n", err);
-		return err;
+	/*
+	 * for newer controllers, device reference clock control bit has
+	 * moved inside UFS controller register address space itself.
+	 */
+	if (priv->hw_ver.major >= 0x02) {
+		priv->dev_ref_clk_ctrl_mmio = hba->mmio_base + REG_UFS_CFG1;
+		priv->dev_ref_clk_en_mask = BIT(26);
 	}
 
 	err = ufs_qcom_init_lane_clks(priv);
@@ -687,12 +743,6 @@ static int ufs_qcom_init(struct ufs_hba *hba)
 
 	printf("%s: Exiting function with success\n", __func__);
 	return 0;
-
-out_disable_phy:
-	generic_phy_exit(&phy);
-
-	printf("%s: Exiting function with error, ret = %d\n", __func__, err);
-	return err;
 }
 
 static struct ufs_hba_ops ufs_qcom_hba_ops = {
