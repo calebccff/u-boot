@@ -269,6 +269,18 @@ static int ufs_qcom_reset(struct ufs_hba *hba)
 	return 0;
 }
 
+static void ufs_qcom_set_caps(struct ufs_hba *hba)
+{
+	struct ufs_qcom_priv *priv = dev_get_priv(hba->dev);
+
+	printf("%s: writel: Entering function\n", __func__);
+	
+	if (priv->hw_ver.major >= 0x2) {
+		priv->caps = UFS_QCOM_CAP_QUNIPRO |
+			     UFS_QCOM_CAP_RETAIN_SEC_CFG_AFTER_PWR_COLLAPSE;
+	}
+}
+
 /**
  * ufs_qcom_advertise_quirks - advertise the known QCOM UFS controller quirks
  * @hba: host controller instance
@@ -659,6 +671,22 @@ static int ufs_qcom_set_dme_vs_core_clk_ctrl_clear_div(struct ufs_hba *hba,
 			    core_clk_ctrl_reg);
 }
 
+/* TBD: Move this to common framework layer */
+u32 ufshcd_get_local_unipro_ver(struct ufs_hba *hba)
+{
+	/* HCI version 1.0 and 1.1 supports UniPro 1.41 */
+	switch (hba->version) {
+	case UFSHCI_VERSION_10:
+	case UFSHCI_VERSION_11:
+		return UFS_UNIPRO_VER_1_41;
+
+	case UFSHCI_VERSION_20:
+	case UFSHCI_VERSION_21:
+	default:
+		return UFS_UNIPRO_VER_1_6;
+	}
+}
+
 static int ufs_qcom_link_startup_notify(struct ufs_hba *hba,
 					enum ufs_notify_change_status status)
 {
@@ -682,6 +710,19 @@ static int ufs_qcom_link_startup_notify(struct ufs_hba *hba,
 			 */
 			err = ufs_qcom_set_dme_vs_core_clk_ctrl_clear_div(hba,
 									  150);
+
+		/*
+		 * Some UFS devices (and may be host) have issues if LCC is
+		 * enabled. So we are setting PA_Local_TX_LCC_Enable to 0
+		 * before link startup which will make sure that both host
+		 * and device TX LCC are disabled once link startup is
+		 * completed.
+		 */
+		if (ufshcd_get_local_unipro_ver(hba) != UFS_UNIPRO_VER_1_41) {
+			printf("%s: Disabling host TX LCC as not UFS_UNIPRO_VER_1_41\n", __func__);
+			err = ufshcd_dme_set(hba, UIC_ARG_MIB(PA_LOCAL_TX_LCC_ENABLE), 0);
+		}
+
 		break;
 	default:
 		break;
@@ -732,6 +773,7 @@ static int ufs_qcom_init(struct ufs_hba *hba)
 		return err;
 	}
 
+	ufs_qcom_set_caps(hba);
 	ufs_qcom_advertise_quirks(hba);
 	ufs_qcom_setup_clocks(hba, true, POST_CHANGE);
 
