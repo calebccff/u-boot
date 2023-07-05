@@ -541,8 +541,10 @@ static int ufs_qcom_cfg_timers(struct ufs_hba *hba, u32 gear,
 	 * But UTP controller uses SYS1CLK_1US_REG register for Interrupt
 	 * Aggregation logic.
 	*/
-	if (ufs_qcom_cap_qunipro(priv))
+	if (ufs_qcom_cap_qunipro(priv)) {
+		printf("%s: Qunipro controller.. not configuring core_clk\n", __func__);
 		return 0;
+	}
 
 	if (gear == 0) {
 		dev_err(hba->dev, "%s: invalid gear = %d\n", __func__, gear);
@@ -708,8 +710,8 @@ static int ufs_qcom_link_startup_notify(struct ufs_hba *hba,
 			 * set unipro core clock cycles to 150 & clear clock
 			 * divider
 			 */
-			err = ufs_qcom_set_dme_vs_core_clk_ctrl_clear_div(hba,
-									  150);
+			/*err = ufs_qcom_set_dme_vs_core_clk_ctrl_clear_div(hba,
+									  150);*/
 
 		/*
 		 * Some UFS devices (and may be host) have issues if LCC is
@@ -781,7 +783,8 @@ static int ufs_qcom_init(struct ufs_hba *hba)
 	 * Power up the PHY using the minimum supported gear (UFS_HS_G2).
 	 * Switching to max gear will be performed during reinit if supported.
 	 */
-	priv->hs_gear = UFS_HS_G2;
+	//priv->hs_gear = UFS_HS_G2;
+	priv->hs_gear = UFS_HS_G3;
 
 	printf("%s: Exiting function with success\n", __func__);
 	return 0;
