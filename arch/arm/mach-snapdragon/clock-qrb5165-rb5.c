@@ -110,46 +110,72 @@ ulong msm_set_rate(struct clk *clk, ulong rate)
 	struct msm_clk_priv *priv = dev_get_priv(clk->dev);
 
 	switch (clk->id) {
-	case GCC_USB30_SEC_MASTER_CLK:
-		writel(0xFFFDDA00, 0x00110004); //GDSC
-		clk_enable_cbc(priv->base + USB30_SEC_MASTER_CBCR);
-		clk_rcg_set_rate_mnd(priv->base, &usb30_master_regs, 4, 0, 0,
-				     CFG_CLK_SRC_GPLL0);
-		break;
-	case GCC_CFG_NOC_USB3_SEC_AXI_CLK:
-		clk_enable_cbc(priv->base + CFG_NOC_USB3_SEC_AXI_CBCR);
-		break;
-	case GCC_AGGRE_USB3_SEC_AXI_CLK:
-		clk_enable_cbc(priv->base + AGGRE_USB3_SEC_AXI_CBCR);
-		break;
-	case GCC_USB30_SEC_SLEEP_CLK:
-		clk_enable_cbc(priv->base + USB30_SEC_SLEEP_CBCR);
-		break;
-	case GCC_USB30_SEC_MOCK_UTMI_CLK:
-		clk_enable_cbc(priv->base + USB30_SEC_MOCK_UTMI_CBCR);
-		break;
-	case GCC_USB3_SEC_CLKREF_EN:
-		clk_enable_cbc(priv->base + USB3_SEC_CLKREF_EN);
-		clk_enable_cbc(priv->base + USB3_SEC_PHY_AUX_CBCR);
-		clk_enable_cbc(priv->base + USB3_SEC_PHY_COM_AUX_CBCR);
-		clk_enable_cbc(priv->base + USB3_SEC_PHY_PIPE_CBCR);
-		//clk_enable_cbc(priv->base + USB3_SEC_PHY_PIPE_MUXR);
-		break;
+		case GCC_UFS_PHY_AXI_CLK:
+			writel(0x00282001, 0x177004); // GCC_UFS_PHY_GDSCR
+			writel(0x00282001, 0x175004); // GCC_UFS_CARD_GDSCR
+			clk_enable_cbc(priv->base + UFS_PHY_AXI_CBCR);
+			break;
+		case GCC_AGGRE_UFS_PHY_AXI_CLK:
+			clk_enable_cbc(priv->base + AGGRE_UFS_PHY_AXI_CBCR);
+			break;
+		case GCC_UFS_PHY_AHB_CLK:
+			clk_enable_cbc(priv->base + UFS_PHY_AHB_CBCR);
+			break;
+		case GCC_UFS_PHY_UNIPRO_CORE_CLK:
+			clk_enable_cbc(priv->base + UFS_PHY_UNIPRO_CBCR);
+			break;
+		case GCC_UFS_PHY_TX_SYMBOL_0_CLK:
+			clk_enable_cbc(priv->base + UFS_PHY_TX_SYMBOL_0_CBCR);
+			break;
+		case GCC_UFS_PHY_RX_SYMBOL_0_CLK:
+			clk_enable_cbc(priv->base + UFS_PHY_RX_SYMBOL_0_CBCR);
+			break;
+		case GCC_UFS_PHY_RX_SYMBOL_1_CLK:
+			clk_enable_cbc(priv->base + UFS_PHY_RX_SYMBOL_1_CBCR);
+			break;
+		case GCC_UFS_PHY_PHY_AUX_CLK:
+			clk_enable_cbc(priv->base + UFS_PHY_PHY_AUX_CBCR);
+			break;
+		case GCC_USB30_SEC_MASTER_CLK:
+			writel(0xFFFDDA00, 0x00110004); //GDSC
+			clk_enable_cbc(priv->base + USB30_SEC_MASTER_CBCR);
+			clk_rcg_set_rate_mnd(priv->base, &usb30_master_regs, 4, 0, 0,
+					CFG_CLK_SRC_GPLL0);
+			break;
+		case GCC_CFG_NOC_USB3_SEC_AXI_CLK:
+			clk_enable_cbc(priv->base + CFG_NOC_USB3_SEC_AXI_CBCR);
+			break;
+		case GCC_AGGRE_USB3_SEC_AXI_CLK:
+			clk_enable_cbc(priv->base + AGGRE_USB3_SEC_AXI_CBCR);
+			break;
+		case GCC_USB30_SEC_SLEEP_CLK:
+			clk_enable_cbc(priv->base + USB30_SEC_SLEEP_CBCR);
+			break;
+		case GCC_USB30_SEC_MOCK_UTMI_CLK:
+			clk_enable_cbc(priv->base + USB30_SEC_MOCK_UTMI_CBCR);
+			break;
+		case GCC_USB3_SEC_CLKREF_EN:
+			clk_enable_cbc(priv->base + USB3_SEC_CLKREF_EN);
+			clk_enable_cbc(priv->base + USB3_SEC_PHY_AUX_CBCR);
+			clk_enable_cbc(priv->base + USB3_SEC_PHY_COM_AUX_CBCR);
+			clk_enable_cbc(priv->base + USB3_SEC_PHY_PIPE_CBCR);
+			//clk_enable_cbc(priv->base + USB3_SEC_PHY_PIPE_MUXR);
+			break;
 
-	case GCC_SDCC2_APPS_CLK:
-		/* SDCC2: 200MHz */
-		clk_rcg_set_rate_mnd(priv->base, &sdhc2_regs, 4, 0, 0,
-				     CFG_CLK_SRC_GPLL0);
-		clk_enable_gpll0(priv->base, &gpll0_vote_clk);
-		clk_enable_cbc(priv->base + SDCC2_APPS_CBCR);
-		break;
-	case GCC_SDCC2_AHB_CLK:
-		clk_enable_cbc(priv->base + SDCC2_AHB_CBCR);
-		break;
-	case GCC_QUPV3_WRAP1_S4_CLK: /* Debug UART */
-		return clk_init_uart(priv, rate);
-	default:
-		return 0;
+		case GCC_SDCC2_APPS_CLK:
+			/* SDCC2: 200MHz */
+			clk_rcg_set_rate_mnd(priv->base, &sdhc2_regs, 4, 0, 0,
+					CFG_CLK_SRC_GPLL0);
+			clk_enable_gpll0(priv->base, &gpll0_vote_clk);
+			clk_enable_cbc(priv->base + SDCC2_APPS_CBCR);
+			break;
+		case GCC_SDCC2_AHB_CLK:
+			clk_enable_cbc(priv->base + SDCC2_AHB_CBCR);
+			break;
+		case GCC_QUPV3_WRAP1_S4_CLK: /* Debug UART */
+			return clk_init_uart(priv, rate);
+		default:
+			return 0;
 	}
 
 	return 0;

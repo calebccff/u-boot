@@ -39,6 +39,17 @@
 #define USB30_SEC_MASTER_N		(0x1002C)
 #define USB30_SEC_MASTER_D		(0x10030)
 
+/* UFS controller clock control registers */
+#define UFS_PHY_AXI_CBCR		(0x77010)
+#define AGGRE_UFS_PHY_AXI_CBCR		(0x770CC)
+#define UFS_PHY_AHB_CBCR		(0x77018)
+#define UFS_PHY_UNIPRO_CBCR		(0x7705C)
+#define UFS_PHY_TX_SYMBOL_0_CBCR	(0x7701C)
+#define UFS_PHY_RX_SYMBOL_0_CBCR	(0x77020)
+#define UFS_PHY_RX_SYMBOL_1_CBCR	(0x770B8)
+
+#define UFS_PHY_PHY_AUX_CBCR		(0x7709C)
+
 /* SDCC2 controller clock control registers */
 #define SDCC2_BCR		(0x14000)
 #define SDCC2_APPS_CBCR		(0x14004)
