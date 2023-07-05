@@ -50,7 +50,6 @@
 
 /* Only use one Task Tag for all requests */
 #define TASK_TAG	0
-//#define TASK_TAG	31
 
 /* Expose the flag value from utp_upiu_query.value */
 #define MASK_QUERY_UPIU_FLAG_LOC 0xFF
@@ -424,22 +423,19 @@ static int ufshcd_make_hba_operational(struct ufs_hba *hba)
 	/* Enable required interrupts */
 	ufshcd_enable_intr(hba, UFSHCD_ENABLE_INTRS);
 
-	printf("%s: Marker 1\n", __func__);
 	/* Disable interrupt aggregation */
 	ufshcd_disable_intr_aggr(hba);
 
-	printf("%s: Marker 2 (dma_addr_t)hba->utrd=0x%llx, lower_32_bits((dma_addr_t)hba->utrdl)=0x%x, upper_32_bits((dma_addr_t)hba->utrdl=0x%x\n", __func__, hba->utrdl_dma_addr, lower_32_bits(hba->utrdl_dma_addr), upper_32_bits(hba->utrdl_dma_addr));
 	/* Configure UTRL and UTMRL base address registers */
-	ufshcd_writel(hba, lower_32_bits(hba->utrdl_dma_addr),
+	ufshcd_writel(hba, lower_32_bits((dma_addr_t)hba->utrdl),
 		      REG_UTP_TRANSFER_REQ_LIST_BASE_L);
-	ufshcd_writel(hba, upper_32_bits(hba->utrdl_dma_addr),
+	ufshcd_writel(hba, upper_32_bits((dma_addr_t)hba->utrdl),
 		      REG_UTP_TRANSFER_REQ_LIST_BASE_H);
-	ufshcd_writel(hba, lower_32_bits(hba->utmrdl_dma_addr),
+	ufshcd_writel(hba, lower_32_bits((dma_addr_t)hba->utmrdl),
 		      REG_UTP_TASK_REQ_LIST_BASE_L);
-	ufshcd_writel(hba, upper_32_bits(hba->utmrdl_dma_addr),
+	ufshcd_writel(hba, upper_32_bits((dma_addr_t)hba->utmrdl),
 		      REG_UTP_TASK_REQ_LIST_BASE_H);
 
-	printf("%s: Marker 3\n", __func__);
 	/*
 	 * Make sure base address and interrupt setup are updated before
 	 * enabling the run/stop registers below.
@@ -460,7 +456,6 @@ static int ufshcd_make_hba_operational(struct ufs_hba *hba)
 	}
 
 	wmb();
-	printf("%s: Marker 4\n", __func__);
 out:
 	return err;
 }
@@ -631,8 +626,8 @@ static void ufshcd_host_memory_configure(struct ufs_hba *hba)
 	u16 response_offset;
 	u16 prdt_offset;
 
-	utrdlp = hba->utrdl_base_addr;
-	cmd_desc_dma_addr = hba->ucdl_dma_addr;
+	utrdlp = hba->utrdl;
+	cmd_desc_dma_addr = (dma_addr_t)hba->ucdl;
 
 	utrdlp->command_desc_base_addr_lo =
 				cpu_to_le32(lower_32_bits(cmd_desc_dma_addr));
@@ -646,11 +641,11 @@ static void ufshcd_host_memory_configure(struct ufs_hba *hba)
 	utrdlp->prd_table_offset = cpu_to_le16(prdt_offset >> 2);
 	utrdlp->response_upiu_length = cpu_to_le16(ALIGNED_UPIU_SIZE >> 2);
 
-	hba->ucd_req_ptr = (struct utp_upiu_req *)hba->ucdl_base_addr;
+	hba->ucd_req_ptr = (struct utp_upiu_req *)hba->ucdl;
 	hba->ucd_rsp_ptr =
-		(struct utp_upiu_rsp *)&hba->ucdl_base_addr->response_upiu;
+		(struct utp_upiu_rsp *)&hba->ucdl->response_upiu;
 	hba->ucd_prdt_ptr =
-		(struct ufshcd_sg_entry *)&hba->ucdl_base_addr->prd_table;
+		(struct ufshcd_sg_entry *)&hba->ucdl->prd_table;
 }
 
 /**
@@ -661,8 +656,7 @@ static int ufshcd_memory_alloc(struct ufs_hba *hba)
 	/* Allocate one Transfer Request Descriptor
 	 * Should be aligned to 1k boundary.
 	 */
-#if 0
-	hba->utrdl = memalign(ARCH_DMA_MINALIGN, /*1024,*/ sizeof(struct utp_transfer_req_desc));
+	hba->utrdl = memalign(1024, sizeof(struct utp_transfer_req_desc));
 	if (!hba->utrdl) {
 		dev_err(hba->dev, "Transfer Descriptor memory allocation failed\n");
 		return -ENOMEM;
@@ -676,44 +670,6 @@ static int ufshcd_memory_alloc(struct ufs_hba *hba)
 		dev_err(hba->dev, "Command descriptor memory allocation failed\n");
 		return -ENOMEM;
 	}
-
-	/* Allocate one Task Management Descriptor
-	 * Should be aligned to 1k boundary.
-	 */
-	hba->utmrdl = memalign(1024, sizeof(struct utp_task_req_desc));
-	if (!hba->utmrdl) {
-		dev_err(hba->dev, "Task Management descriptor memory allocation failed\n");
-		return -ENOMEM;
-	}
-#else
-	hba->utrdl_base_addr = dma_alloc_coherent(sizeof(struct utp_transfer_req_desc),
-		       				   (unsigned long *)&hba->utrdl_dma_addr);
-	if (!hba->utrdl_base_addr || (hba->utrdl_dma_addr & (1024 - 1))) {
-		dev_err(hba->dev,
-			"Transfer Descriptor Memory allocation failed\n");
-		return -ENOMEM;
-	}
-
-	/* Allocate one Command Descriptor
-	 * Should be aligned to 128 byte boundary.
-	 */
-	hba->ucdl_base_addr = dma_alloc_coherent(sizeof(struct utp_transfer_cmd_desc),
-		       				 (unsigned long *)&hba->ucdl_dma_addr);
-	if (!hba->ucdl_base_addr || (hba->ucdl_dma_addr & (128 - 1))) {
-		dev_err(hba->dev, "Command descriptor memory allocation failed\n");
-		return -ENOMEM;
-	}
-
-	/* Allocate one Task Management Descriptor
-	 * Should be aligned to 1k boundary.
-	 */
-	hba->utmrdl_base_addr = dma_alloc_coherent(sizeof(struct utp_task_req_desc),
-						    (unsigned long *)&hba->utmrdl_dma_addr);
-	if (!hba->utmrdl_base_addr || (hba->utmrdl_dma_addr & (1024 - 1))) {
-		dev_err(hba->dev, "Task Management Descriptor Memory allocation failed\n");
-		return -ENOMEM;
-	}
-#endif
 
 	return 0;
 }
@@ -841,7 +797,6 @@ static inline void ufshcd_prepare_utp_nop_upiu(struct ufs_hba *hba)
 	memset(ucd_req_ptr, 0, sizeof(struct utp_upiu_req));
 
 	/* command descriptor fields */
-
 	/*ucd_req_ptr->header.dword_0 =
 			UPIU_HEADER_DWORD(UPIU_TRANSACTION_NOP_OUT, 0, 0, 0x1f);*/
 	ucd_req_ptr->header.dword_0 =
@@ -862,7 +817,7 @@ static int ufshcd_comp_devman_upiu(struct ufs_hba *hba,
 {
 	u32 upiu_flags;
 	int ret = 0;
-	struct utp_transfer_req_desc *req_desc = hba->utrdl_base_addr;
+	struct utp_transfer_req_desc *req_desc = hba->utrdl;
 
 	hba->dev_cmd.type = cmd_type;
 
@@ -886,17 +841,12 @@ static int ufshcd_send_command(struct ufs_hba *hba, unsigned int task_tag)
 	unsigned long start;
 	u32 intr_status;
 	u32 enabled_intr_status;
-	int val;
 
 	printf("%s: Entered function\n", __func__);
-	val = ufshcd_readl(hba, REG_UTP_TRANSFER_REQ_DOOR_BELL);
-	printf("%s: Read reg=0x%p, val=0x%x\n", __func__, hba->mmio_base + REG_UTP_TRANSFER_REQ_DOOR_BELL, val);
 
-	printf("%s: reg=0x%p, val=0x%x\n", __func__, hba->mmio_base + REG_UTP_TRANSFER_REQ_DOOR_BELL, (1 << task_tag));
-	ufshcd_writel(hba, (1 << task_tag), REG_UTP_TRANSFER_REQ_DOOR_BELL);
+	ufshcd_writel(hba, 1 << task_tag, REG_UTP_TRANSFER_REQ_DOOR_BELL);
 
 	printf("%s: Writing to REG_UTP_TRANSFER_REQ_DOOR_BELL ok\n", __func__);
-	udelay(500);
 	start = get_timer(0);
 	do {
 		printf("%s: Reading from INTR STATUS reg\n", __func__);
@@ -936,7 +886,7 @@ static inline int ufshcd_get_req_rsp(struct utp_upiu_rsp *ucd_rsp_ptr)
  */
 static inline int ufshcd_get_tr_ocs(struct ufs_hba *hba)
 {
-	return le32_to_cpu(hba->utrdl_base_addr->header.dword_2) & MASK_OCS;
+	return le32_to_cpu(hba->utrdl->header.dword_2) & MASK_OCS;
 }
 
 static inline int ufshcd_get_rsp_upiu_result(struct utp_upiu_rsp *ucd_rsp_ptr)
@@ -1502,7 +1452,7 @@ static inline void prepare_prdt_desc(struct ufshcd_sg_entry *entry,
 
 static void prepare_prdt_table(struct ufs_hba *hba, struct scsi_cmd *pccb)
 {
-	struct utp_transfer_req_desc *req_desc = hba->utrdl_base_addr;
+	struct utp_transfer_req_desc *req_desc = hba->utrdl;
 	struct ufshcd_sg_entry *prd_table = hba->ucd_prdt_ptr;
 	ulong datalen = pccb->datalen;
 	int table_length;
@@ -1532,7 +1482,7 @@ static void prepare_prdt_table(struct ufs_hba *hba, struct scsi_cmd *pccb)
 static int ufs_scsi_exec(struct udevice *scsi_dev, struct scsi_cmd *pccb)
 {
 	struct ufs_hba *hba = dev_get_uclass_priv(scsi_dev->parent);
-	struct utp_transfer_req_desc *req_desc = hba->utrdl_base_addr;
+	struct utp_transfer_req_desc *req_desc = hba->utrdl;
 	u32 upiu_flags;
 	int ocs, result = 0;
 	u8 scsi_status;
@@ -1845,11 +1795,9 @@ static int ufshcd_verify_dev_init(struct ufs_hba *hba)
 		dev_err(hba->dev, "%s: error %d retrying\n", __func__, err);
 	}
 
-	printf("%s: Marker 1\n", __func__);
 	if (err)
 		dev_err(hba->dev, "%s: NOP OUT failed %d\n", __func__, err);
 
-	printf("%s: Marker 2\n", __func__);
 	return err;
 }
 
@@ -1968,7 +1916,8 @@ int ufshcd_probe(struct udevice *ufs_dev, struct ufs_hba_ops *hba_ops)
 
 	hba->dev = ufs_dev;
 	hba->ops = hba_ops;
-	hba->mmio_base = (void *)dev_read_addr(ufs_dev);
+	hba->mmio_base = dev_read_addr_ptr(ufs_dev);
+
 	printf("%s: hba->mmio_base = 0x%p\n", __func__,hba->mmio_base);
 
 	/* Set descriptor lengths to specification defaults */
