@@ -202,6 +202,7 @@ struct ufs_qcom_priv {
 	struct clk *core_clk;
 	struct clk *bus_aggr_clk;
 	struct clk *iface_clk;
+	struct clk *core_clk_unipro;
 	struct clk *ref_clk;
 	bool is_core_clks_enabled;
 
