@@ -176,11 +176,17 @@ static int ufs_qcom_enable_core_clks(struct ufs_qcom_priv *priv)
 	if (err)
 		goto disable_bus_aggr_clk;
 
+	err = ufs_qcom_clk_enable(dev, "core_clk_unipro", priv->core_clk_unipro);
+	if (err)
+		goto disable_iface_clk;
+
 	priv->is_core_clks_enabled = true;
 
 	printf("%s: Exiting function with success\n", __func__);
 	return 0;
 
+disable_iface_clk:
+	clk_disable_unprepare(priv->iface_clk);
 disable_bus_aggr_clk:
 	clk_disable_unprepare(priv->bus_aggr_clk);
 disable_core_clk:
@@ -207,6 +213,10 @@ static int ufs_qcom_init_core_clks(struct ufs_qcom_priv *priv)
 		return err;
 
 	err = ufs_qcom_clk_get(dev, "iface_clk", &priv->iface_clk, false);
+	if (err)
+		return err;
+
+	err = ufs_qcom_clk_get(dev, "core_clk_unipro", &priv->core_clk_unipro, false);
 	if (err)
 		return err;
 
@@ -447,6 +457,45 @@ out_disable_phy:
 	return ret;
 }
 
+static int ufs_qcom_check_hibern8(struct ufs_hba *hba)
+{
+	int err, retry_count = 50;
+	u32 tx_fsm_val = 0;
+
+	printk("%s: Entering function\n", __func__);
+	do {
+		err = ufshcd_dme_get(hba,
+				UIC_ARG_MIB_SEL(MPHY_TX_FSM_STATE,
+					UIC_ARG_MPHY_TX_GEN_SEL_INDEX(0)),
+				&tx_fsm_val);
+		if (err || tx_fsm_val == TX_FSM_HIBERN8)
+			break;
+
+		/* max. 200us */
+		udelay(200);
+		retry_count--;
+	} while (retry_count != 0);
+
+	/*
+	 * check the state again.
+	 */
+	err = ufshcd_dme_get(hba,
+			UIC_ARG_MIB_SEL(MPHY_TX_FSM_STATE,
+				UIC_ARG_MPHY_TX_GEN_SEL_INDEX(0)),
+				&tx_fsm_val);
+
+	if (err) {
+		dev_err(hba->dev, "%s: unable to get TX_FSM_STATE, err %d\n",
+				__func__, err);
+	} else if (tx_fsm_val != TX_FSM_HIBERN8) {
+		err = tx_fsm_val;
+		dev_err(hba->dev, "%s: invalid TX_FSM_STATE = %d\n",
+				__func__, err);
+	}
+
+	return err;
+}
+
 /*
  * The UTP controller has a number of internal clock gating cells (CGCs).
  * Internal hardware sub-modules within the UTP controller control the CGCs.
@@ -485,10 +534,27 @@ static int ufs_qcom_hce_enable_notify(struct ufs_hba *hba,
 		 * clocks, hence, enable the lane clocks only after PHY
 		 * is initialized.
 		 */
+		err = ufs_qcom_enable_core_clks(priv);
+		if (err < 0)
+			return err;
+
 		err = ufs_qcom_enable_lane_clks(priv);
+		if (err < 0)
+			return err;
+
+#if 0
+		err = clk_set_rate(priv->core_clk, 37500000);
+		if (err < 0)
+			return err;
+
+		err = clk_set_rate(priv->core_clk_unipro, 37500000);
+		if (err < 0)
+			return err;
+#endif
 		break;
 	case POST_CHANGE:
 		/* check if UFS PHY moved from DISABLED to HIBERN8 */
+		err = ufs_qcom_check_hibern8(hba);
 		ufs_qcom_enable_hw_clk_gating(hba);
 		break;
 	default:
@@ -752,8 +818,8 @@ static int ufs_qcom_init(struct ufs_hba *hba)
 	priv->hba = hba;
 
 	/* setup clocks */
-	ufs_qcom_setup_clocks(hba, true, PRE_CHANGE);
-	ufs_qcom_setup_clocks(hba, true, POST_CHANGE);
+	//ufs_qcom_setup_clocks(hba, true, PRE_CHANGE);
+	//ufs_qcom_setup_clocks(hba, true, POST_CHANGE);
 	
 	ufs_qcom_get_controller_revision(hba, &priv->hw_ver.major,
 		&priv->hw_ver.minor, &priv->hw_ver.step);
@@ -767,6 +833,12 @@ static int ufs_qcom_init(struct ufs_hba *hba)
 	if (priv->hw_ver.major >= 0x02) {
 		priv->dev_ref_clk_ctrl_mmio = hba->mmio_base + REG_UFS_CFG1;
 		priv->dev_ref_clk_en_mask = BIT(26);
+	}
+
+	err = ufs_qcom_init_core_clks(priv);
+	if (err) {
+		dev_err(hba->dev, "failed to initialize core clocks, err:%d\n", err);
+		return err;
 	}
 
 	err = ufs_qcom_init_lane_clks(priv);
@@ -790,8 +862,72 @@ static int ufs_qcom_init(struct ufs_hba *hba)
 	return 0;
 }
 
+static void ufshcd_print_clk_freqs(struct ufs_hba *hba)
+{
+	struct ufs_qcom_priv *priv = dev_get_priv(hba->dev);
+
+	dev_err(hba->dev, "clk: %s, rate: %lu\n", "core_clk", clk_get_rate(priv->core_clk));
+	dev_err(hba->dev, "clk: %s, rate: %lu\n", "bus_aggr_clk", clk_get_rate(priv->bus_aggr_clk));
+	dev_err(hba->dev, "clk: %s, rate: %lu\n", "iface_clk", clk_get_rate(priv->iface_clk));
+	dev_err(hba->dev, "clk: %s, rate: %lu\n", "core_clk_unipro", clk_get_rate(priv->core_clk_unipro));
+}
+
+static void ufs_qcom_dump_dbg_regs(struct ufs_hba *hba)
+{
+	u32 reg;
+	struct ufs_qcom_priv *priv = dev_get_priv(hba->dev);
+
+	ufshcd_dump_regs(hba, REG_UFS_SYS1CLK_1US, 16 * 4,
+			 "HCI Vendor Specific Registers ");
+
+	reg = ufs_qcom_get_debug_reg_offset(priv, UFS_UFS_DBG_RD_REG_OCSC);
+	ufshcd_dump_regs(hba, reg, 44 * 4, "UFS_UFS_DBG_RD_REG_OCSC ");
+
+	reg = ufshcd_readl(hba, REG_UFS_CFG1);
+	reg |= UTP_DBG_RAMS_EN;
+	ufshcd_writel(hba, reg, REG_UFS_CFG1);
+	printk("%s: writel_cnt=%u, reg=0x%pS, val=0x%x\n", __func__,
+		       writel_count++, (hba->mmio_base + REG_UFS_CFG1), reg);
+
+	reg = ufs_qcom_get_debug_reg_offset(priv, UFS_UFS_DBG_RD_EDTL_RAM);
+	ufshcd_dump_regs(hba, reg, 32 * 4, "UFS_UFS_DBG_RD_EDTL_RAM ");
+
+	reg = ufs_qcom_get_debug_reg_offset(priv, UFS_UFS_DBG_RD_DESC_RAM);
+	ufshcd_dump_regs(hba, reg, 128 * 4, "UFS_UFS_DBG_RD_DESC_RAM ");
+
+	reg = ufs_qcom_get_debug_reg_offset(priv, UFS_UFS_DBG_RD_PRDT_RAM);
+	ufshcd_dump_regs(hba, reg, 64 * 4, "UFS_UFS_DBG_RD_PRDT_RAM ");
+
+	/* clear bit 17 - UTP_DBG_RAMS_EN */
+	ufshcd_rmwl(hba, UTP_DBG_RAMS_EN, 0, REG_UFS_CFG1);
+
+	reg = ufs_qcom_get_debug_reg_offset(priv, UFS_DBG_RD_REG_UAWM);
+	ufshcd_dump_regs(hba, reg, 4 * 4, "UFS_DBG_RD_REG_UAWM ");
+
+	reg = ufs_qcom_get_debug_reg_offset(priv, UFS_DBG_RD_REG_UARM);
+	ufshcd_dump_regs(hba, reg, 4 * 4, "UFS_DBG_RD_REG_UARM ");
+
+	reg = ufs_qcom_get_debug_reg_offset(priv, UFS_DBG_RD_REG_TXUC);
+	ufshcd_dump_regs(hba, reg, 48 * 4, "UFS_DBG_RD_REG_TXUC ");
+
+	reg = ufs_qcom_get_debug_reg_offset(priv, UFS_DBG_RD_REG_RXUC);
+	ufshcd_dump_regs(hba, reg, 27 * 4, "UFS_DBG_RD_REG_RXUC ");
+
+	reg = ufs_qcom_get_debug_reg_offset(priv, UFS_DBG_RD_REG_DFC);
+	ufshcd_dump_regs(hba, reg, 19 * 4, "UFS_DBG_RD_REG_DFC ");
+
+	reg = ufs_qcom_get_debug_reg_offset(priv, UFS_DBG_RD_REG_TRLUT);
+	ufshcd_dump_regs(hba, reg, 34 * 4, "UFS_DBG_RD_REG_TRLUT ");
+
+	reg = ufs_qcom_get_debug_reg_offset(priv, UFS_DBG_RD_REG_TMRLUT);
+	ufshcd_dump_regs(hba, reg, 9 * 4, "UFS_DBG_RD_REG_TMRLUT ");
+
+	ufshcd_print_clk_freqs(hba);
+}
+
 static struct ufs_hba_ops ufs_qcom_hba_ops = {
 	.init			= ufs_qcom_init,
+	.dbg_register_dump	= ufs_qcom_dump_dbg_regs,
 	.hce_enable_notify	= ufs_qcom_hce_enable_notify,
 	.link_startup_notify	= ufs_qcom_link_startup_notify,
 };
