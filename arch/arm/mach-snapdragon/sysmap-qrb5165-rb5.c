@@ -26,15 +26,15 @@ static struct mm_region sm8250_mem_map[] = {
 	},
 #else
 	}, {
-		.virt = 0x89600000UL, /* DDR */
-		.phys = 0x89600000UL, /* DDR */
-		.size = 0x162000000UL,
-		.attrs = PTE_BLOCK_MEMTYPE(MT_NORMAL_NC) |
+		.virt = 0x80000000UL, /* DDR */
+		.phys = 0x80000000UL, /* DDR */
+		.size = 0x380000000UL, /* 14GiB */
+		.attrs = PTE_BLOCK_MEMTYPE(MT_NORMAL) |
 			 PTE_BLOCK_INNER_SHARE
 	}, {
-		.virt = 0xa0000000UL, /* DDR */
-		.phys = 0xa0000000UL, /* DDR */
-		.size = 0x20000000UL,
+		.virt = 0x800000000UL, /* DDR */
+		.phys = 0x800000000UL, /* DDR */
+		.size = 0x800000000UL, /* 32GB */
 		.attrs = PTE_BLOCK_MEMTYPE(MT_NORMAL_NC) |
 			 PTE_BLOCK_INNER_SHARE
 	},
