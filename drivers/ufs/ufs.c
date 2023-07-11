@@ -59,9 +59,43 @@
 /* maximum bytes per request */
 #define UFS_MAX_BYTES	(128 * 256 * 1024)
 
+#define ufshcd_hex_dump(prefix_str, buf, len) do {                      \
+	size_t __len = (len);                                           \
+	print_hex_dump(prefix_str,                             		\
+		       DUMP_PREFIX_OFFSET,				\
+		       16, 4, buf, __len, false);                       \
+} while (0)
+
 static inline bool ufshcd_is_hba_active(struct ufs_hba *hba);
 static inline void ufshcd_hba_stop(struct ufs_hba *hba);
 static int ufshcd_hba_enable(struct ufs_hba *hba);
+
+int ufshcd_dump_regs(struct ufs_hba *hba, size_t offset, size_t len,
+		     const char *prefix)
+{
+	u32 *regs;
+	size_t pos;
+
+	if (offset % 4 != 0 || len % 4 != 0) /* keep readl happy */
+		return -EINVAL;
+
+	regs = kzalloc(len, GFP_KERNEL);
+	if (!regs)
+		return -ENOMEM;
+
+	for (pos = 0; pos < len; pos += 4) {
+		if (offset == 0 &&
+		    pos >= REG_UIC_ERROR_CODE_PHY_ADAPTER_LAYER &&
+		    pos <= REG_UIC_ERROR_CODE_DME)
+			continue;
+		regs[pos / 4] = ufshcd_readl(hba, offset + pos);
+	}
+
+	ufshcd_hex_dump(prefix, regs, len);
+	kfree(regs);
+
+	return 0;
+}
 
 /*
  * ufshcd_wait_for_register - wait for register value to change
@@ -656,7 +690,11 @@ static int ufshcd_memory_alloc(struct ufs_hba *hba)
 	/* Allocate one Transfer Request Descriptor
 	 * Should be aligned to 1k boundary.
 	 */
+#ifdef CONFIG_SYS_NONCACHED_MEMORY
+	hba->utrdl = noncached_alloc(sizeof(struct utp_transfer_req_desc), 1024);
+#else
 	hba->utrdl = memalign(1024, sizeof(struct utp_transfer_req_desc));
+#endif
 	if (!hba->utrdl) {
 		dev_err(hba->dev, "Transfer Descriptor memory allocation failed\n");
 		return -ENOMEM;
@@ -665,7 +703,11 @@ static int ufshcd_memory_alloc(struct ufs_hba *hba)
 	/* Allocate one Command Descriptor
 	 * Should be aligned to 1k boundary.
 	 */
+#ifdef CONFIG_SYS_NONCACHED_MEMORY
+	hba->ucdl = noncached_alloc(sizeof(struct utp_transfer_cmd_desc), 1024);
+#else
 	hba->ucdl = memalign(1024, sizeof(struct utp_transfer_cmd_desc));
+#endif
 	if (!hba->ucdl) {
 		dev_err(hba->dev, "Command descriptor memory allocation failed\n");
 		return -ENOMEM;
@@ -718,7 +760,7 @@ static inline u8 ufshcd_get_upmcrs(struct ufs_hba *hba)
  * ufshcd_prepare_req_desc_hdr() - Fills the requests header
  * descriptor according to request
  */
-static void ufshcd_prepare_req_desc_hdr(struct utp_transfer_req_desc *req_desc,
+static void ufshcd_prepare_req_desc_hdr(struct ufs_hba *hba, struct utp_transfer_req_desc *req_desc,
 					u32 *upiu_flags,
 					enum dma_data_direction cmd_dir)
 {
@@ -756,6 +798,13 @@ static void ufshcd_prepare_req_desc_hdr(struct utp_transfer_req_desc *req_desc,
 	req_desc->header.dword_3 = 0;
 
 	req_desc->prd_table_length = 0;
+
+#ifndef CONFIG_SYS_NONCACHED_MEMORY
+	flush_dcache_range((unsigned long)req_desc, (unsigned long)(req_desc + ROUND(sizeof(struct utp_transfer_req_desc), CONFIG_SYS_CACHELINE_SIZE)));
+	flush_dcache_range((unsigned long)hba->utrdl, (unsigned long)(hba->utrdl + ROUND(sizeof(struct utp_transfer_req_desc), CONFIG_SYS_CACHELINE_SIZE)));
+	flush_dcache_range((unsigned long)hba->ucdl, (unsigned long)(hba->ucdl + ROUND(sizeof(struct utp_transfer_cmd_desc), CONFIG_SYS_CACHELINE_SIZE)));
+#endif
+	mb();
 }
 
 static void ufshcd_prepare_utp_query_req_upiu(struct ufs_hba *hba,
@@ -805,6 +854,13 @@ static inline void ufshcd_prepare_utp_nop_upiu(struct ufs_hba *hba)
 	ucd_req_ptr->header.dword_1 = 0;
 	ucd_req_ptr->header.dword_2 = 0;
 
+#ifndef CONFIG_SYS_NONCACHED_MEMORY
+	flush_dcache_range((unsigned long)ucd_req_ptr, (unsigned long)(ucd_req_ptr + ROUND(sizeof(struct utp_upiu_req), CONFIG_SYS_CACHELINE_SIZE)));
+	flush_dcache_range((unsigned long)hba->utrdl, (unsigned long)(hba->utrdl + ROUND(sizeof(struct utp_transfer_req_desc), CONFIG_SYS_CACHELINE_SIZE)));
+	flush_dcache_range((unsigned long)hba->ucdl, (unsigned long)(hba->ucdl + ROUND(sizeof(struct utp_transfer_cmd_desc), CONFIG_SYS_CACHELINE_SIZE)));
+#endif
+	mb();
+
 	memset(hba->ucd_rsp_ptr, 0, sizeof(struct utp_upiu_rsp));
 }
 
@@ -821,7 +877,7 @@ static int ufshcd_comp_devman_upiu(struct ufs_hba *hba,
 
 	hba->dev_cmd.type = cmd_type;
 
-	ufshcd_prepare_req_desc_hdr(req_desc, &upiu_flags, DMA_NONE);
+	ufshcd_prepare_req_desc_hdr(hba, req_desc, &upiu_flags, DMA_NONE);
 	switch (cmd_type) {
 	case DEV_CMD_TYPE_QUERY:
 		ufshcd_prepare_utp_query_req_upiu(hba, upiu_flags);
@@ -841,10 +897,26 @@ static int ufshcd_send_command(struct ufs_hba *hba, unsigned int task_tag)
 	unsigned long start;
 	u32 intr_status;
 	u32 enabled_intr_status;
+	int ret;
+	static bool first = true;
 
 	printf("%s: Entered function\n", __func__);
 
 	ufshcd_writel(hba, 1 << task_tag, REG_UTP_TRANSFER_REQ_DOOR_BELL);
+	mb();
+
+	//Dump regs
+	if (first) {
+		ret = ufshcd_dump_regs(hba, 0, UFSHCI_REG_SPACE_SIZE, "host_regs: ");
+		if (ret < 0)
+			printf("ufshcd_dump_regs failed: %d\n", ret);
+
+		ufshcd_ops_dbg_register_dump(hba);
+
+		first = false;
+	}
+
+	mb();
 
 	printf("%s: Writing to REG_UTP_TRANSFER_REQ_DOOR_BELL ok\n", __func__);
 	start = get_timer(0);
@@ -1487,7 +1559,7 @@ static int ufs_scsi_exec(struct udevice *scsi_dev, struct scsi_cmd *pccb)
 	int ocs, result = 0;
 	u8 scsi_status;
 
-	ufshcd_prepare_req_desc_hdr(req_desc, &upiu_flags, pccb->dma_dir);
+	ufshcd_prepare_req_desc_hdr(hba, req_desc, &upiu_flags, pccb->dma_dir);
 	ufshcd_prepare_utp_scsi_cmd_upiu(hba, pccb, upiu_flags);
 	prepare_prdt_table(hba, pccb);
 
@@ -1953,6 +2025,7 @@ int ufshcd_probe(struct udevice *ufs_dev, struct ufs_hba_ops *hba_ops)
 	ufshcd_writel(hba, ufshcd_readl(hba, REG_INTERRUPT_STATUS),
 		      REG_INTERRUPT_STATUS);
 	ufshcd_writel(hba, 0, REG_INTERRUPT_ENABLE);
+	mb();
 
 	err = ufshcd_hba_enable(hba);
 	if (err) {
