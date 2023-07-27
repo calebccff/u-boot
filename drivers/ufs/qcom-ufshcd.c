@@ -964,7 +964,7 @@ static int ufs_qcom_bind(struct udevice *dev)
 }
 
 static const struct udevice_id ufs_qcom_ids[] = {
-	{ .compatible = "qcom,ufshc"},
+	{ .compatible = "qcom,ufshc" },
 	{},
 };
 
