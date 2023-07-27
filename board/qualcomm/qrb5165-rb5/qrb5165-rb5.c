@@ -14,6 +14,7 @@
 #include <asm/gpio.h>
 #include <asm/global_data.h>
 #include <fdt_support.h>
+#include <asm/io.h>
 #include <asm/psci.h>
 #include <asm/arch/dram.h>
 
@@ -27,6 +28,33 @@ int dram_init(void)
 	return fdtdec_setup_mem_size_base();
 }
 
+#define MEM_REG1_BASE	(0x80000000UL)
+#define MEM_REG1_SIZE	(0x3C900000UL)
+
+#define MEM_REG2_BASE	(0xC0000000UL)
+#define MEM_REG2_SIZE	(0x80000000UL)
+
+#define MEM_REG3_BASE	(0x140000000UL)
+#define MEM_REG3_SIZE	(0x0C0000000UL)
+
+int dram_init_banksize(void)
+{
+#if 0
+	gd->bd->bi_dram[0].start = MEM_REG1_BASE;
+	gd->bd->bi_dram[0].size =  MEM_REG1_SIZE;
+
+	gd->bd->bi_dram[1].start = MEM_REG2_BASE;
+	gd->bd->bi_dram[1].size =  MEM_REG2_SIZE;
+
+	gd->bd->bi_dram[2].start = MEM_REG3_BASE;
+	gd->bd->bi_dram[2].size =  MEM_REG3_SIZE;
+
+	return 0;
+#else
+	return fdtdec_setup_memory_banksize();
+#endif
+}
+
 static void show_psci_version(void)
 {
 	struct arm_smccc_res res;
@@ -38,9 +66,32 @@ static void show_psci_version(void)
 		PSCI_VERSION_MINOR(res.a0));
 }
 
+#define ARM_SMMU_GR0_sCR0	(0x15000000UL)
+#define ARM_SMMU_sCR0_USFCFG	BIT(10)
+
+void set_smmu_bypass_mode(void)
+{
+	u32 reg = readl(ARM_SMMU_GR0_sCR0);
+	printf("%s: Checking SMMU config. Initial sCR0 reg value is 0x%lx\n",
+		       __func__, reg);
+
+	/* bypass SMMU */
+	reg &= ~ARM_SMMU_sCR0_USFCFG;
+	writel(reg, ARM_SMMU_GR0_sCR0);
+
+	printf("%s: Setting SMMU in bypass mode. Writing 0x%x at 0x%lx\n", __func__,
+		       reg, ARM_SMMU_GR0_sCR0);
+}
+
 int board_init(void)
 {
 	show_psci_version();
+
+	set_smmu_bypass_mode();
+#if 0
+	icache_disable();
+	dcache_disable();
+#endif
 
 	return 0;
 }
