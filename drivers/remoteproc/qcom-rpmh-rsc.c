@@ -706,7 +706,6 @@ static int rpmh_rsc_probe(struct udevice *dev)
 	u32 rsc_id;
 	ofnode dn;
 
-	printf("%s: Entering function\n", __func__);
 	dn = dev->node_;
 	ret = ofnode_read_u32(dn, "qcom,drv-id", &drv->id);
 	if (ret)
@@ -723,7 +722,8 @@ static int rpmh_rsc_probe(struct udevice *dev)
 	drv->ver.minor = rsc_id & (MINOR_VER_MASK << MINOR_VER_SHIFT);
 	drv->ver.minor >>= MINOR_VER_SHIFT;
 
-	printf("%s: drv->ver.major = %d\n", __func__, drv->ver.major);
+	printf("%s: RPMh RSC Register offset as per drv->ver.major: %d\n",
+		       __func__, drv->ver.major);
 	if (drv->ver.major == 3)
 		drv->regs = rpmh_rsc_reg_offset_ver_3_0;
 	else
@@ -733,8 +733,7 @@ static int rpmh_rsc_probe(struct udevice *dev)
 	if (ret)
 		return ret;
 
-	printk("BHUPESH: %s: writing: 0x%x at 0x%p\n",
-		  __func__, drv->tcs[ACTIVE_TCS].mask, drv->tcs_base + drv->regs[RSC_DRV_IRQ_ENABLE]);
+	printk("%s: Writing RPMh RSC TSC registers/cmds.. start..\n", __func__);
 
 	/* Enable the active TCS to send requests immediately */
 	writel_relaxed(drv->tcs[ACTIVE_TCS].mask,
@@ -2557,7 +2556,7 @@ writel(0x10000 , 0x0000000018220d14);
 writel(0x1010000 , 0x0000000018220d14);
 writel(0x0 , 0x0000000018220d1c);
 
-	printf("%s: Exiting function successfully\n", __func__);
+	printk("%s: Writing RPMh RSC TSC registers/cmds.. complete..\n", __func__);
 	return 0;
 }
 
