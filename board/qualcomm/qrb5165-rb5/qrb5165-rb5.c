@@ -72,7 +72,7 @@ static void show_psci_version(void)
 void set_smmu_bypass_mode(void)
 {
 	u32 reg = readl(ARM_SMMU_GR0_sCR0);
-	printf("%s: Checking SMMU config. Initial sCR0 reg value is 0x%lx\n",
+	printf("%s: Checking SMMU config. Initial sCR0 reg value is 0x%x\n",
 		       __func__, reg);
 
 	/* bypass SMMU */
