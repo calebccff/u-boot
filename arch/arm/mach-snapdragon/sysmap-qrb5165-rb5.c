@@ -16,29 +16,25 @@ static struct mm_region sm8250_mem_map[] = {
 		.attrs = PTE_BLOCK_MEMTYPE(MT_DEVICE_NGNRNE) |
 			 PTE_BLOCK_NON_SHARE |
 			 PTE_BLOCK_PXN | PTE_BLOCK_UXN
-#if 0
 	}, {
 		.virt = 0x80000000UL, /* DDR */
 		.phys = 0x80000000UL, /* DDR */
-		.size = 0x200000000UL, /* 8GiB - maximum allowed memory */
-		.attrs = PTE_BLOCK_MEMTYPE(MT_NORMAL) |
-			 PTE_BLOCK_INNER_SHARE
-	},
-#else
-	}, {
-		.virt = 0x80000000UL, /* DDR */
-		.phys = 0x80000000UL, /* DDR */
-		.size = 0x380000000UL, /* 14GiB */
+		.size = 0x3B800000UL, /* GiB */
 		.attrs = PTE_BLOCK_MEMTYPE(MT_NORMAL) |
 			 PTE_BLOCK_INNER_SHARE
 	}, {
-		.virt = 0x800000000UL, /* DDR */
-		.phys = 0x800000000UL, /* DDR */
-		.size = 0x800000000UL, /* 32GB */
+		.virt = 0xC0000000UL, /* DDR */
+		.phys = 0xC0000000UL, /* DDR */
+		.size = 0xC0000000UL, /* GB */
 		.attrs = PTE_BLOCK_MEMTYPE(MT_NORMAL_NC) |
+			 PTE_BLOCK_NON_SHARE
+	}, {
+		.virt = 0x180000000UL, /* DDR */
+		.phys = 0x180000000UL, /* DDR */
+		.size = 0x100000000UL, /* GB */
+		.attrs = PTE_BLOCK_MEMTYPE(MT_NORMAL) |
 			 PTE_BLOCK_INNER_SHARE
 	},
-#endif
 	/* Terminator */
 	{ 0 }
 };
