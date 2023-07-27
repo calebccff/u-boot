@@ -97,6 +97,38 @@ int ufshcd_dump_regs(struct ufs_hba *hba, size_t offset, size_t len,
 	return 0;
 }
 
+static void ufshcd_print_tr(struct ufs_hba *hba, int tag, bool pr_prdt)
+{
+	int prdt_length;
+	struct utp_transfer_req_desc *req_desc = hba->utrdl;
+
+	dev_err(hba->dev,
+		"UPIU[%d] - Transfer Request Descriptor phys@0x%llx\n",
+		tag, (u64)hba->utrdl);
+
+	ufshcd_hex_dump("UPIU TRD: ", hba->utrdl,
+			sizeof(struct utp_transfer_req_desc));
+	dev_err(hba->dev, "UPIU[%d] - Request UPIU phys@0x%llx\n", tag,
+		(u64)hba->ucd_req_ptr);
+	ufshcd_hex_dump("UPIU REQ: ", hba->ucd_req_ptr,
+			sizeof(struct utp_upiu_req));
+	dev_err(hba->dev, "UPIU[%d] - Response UPIU phys@0x%llx\n", tag,
+		(u64)hba->ucd_rsp_ptr);
+	ufshcd_hex_dump("UPIU RSP: ", hba->ucd_rsp_ptr,
+			sizeof(struct utp_upiu_rsp));
+
+	prdt_length = le16_to_cpu(req_desc->prd_table_length);
+
+	dev_err(hba->dev,
+		"UPIU[%d] - PRDT - %d entries  phys@0x%llx\n",
+		tag, prdt_length,
+		(u64)hba->ucd_prdt_ptr);
+
+	if (pr_prdt)
+		ufshcd_hex_dump("UPIU PRDT: ", hba->ucd_prdt_ptr,
+			sizeof(struct ufshcd_sg_entry) * prdt_length);
+}
+
 /*
  * ufshcd_wait_for_register - wait for register value to change
  */
@@ -691,7 +723,7 @@ static int ufshcd_memory_alloc(struct ufs_hba *hba)
 	 * Should be aligned to 1k boundary.
 	 */
 #ifdef CONFIG_SYS_NONCACHED_MEMORY
-	hba->utrdl = noncached_alloc(sizeof(struct utp_transfer_req_desc), 1024);
+	hba->utrdl = (struct utp_transfer_req_desc *)noncached_alloc(sizeof(struct utp_transfer_req_desc), 1024);
 #else
 	hba->utrdl = memalign(1024, sizeof(struct utp_transfer_req_desc));
 #endif
@@ -704,7 +736,7 @@ static int ufshcd_memory_alloc(struct ufs_hba *hba)
 	 * Should be aligned to 1k boundary.
 	 */
 #ifdef CONFIG_SYS_NONCACHED_MEMORY
-	hba->ucdl = noncached_alloc(sizeof(struct utp_transfer_cmd_desc), 1024);
+	hba->ucdl = (struct utp_transfer_cmd_desc *)noncached_alloc(sizeof(struct utp_transfer_cmd_desc), 1024);
 #else
 	hba->ucdl = memalign(1024, sizeof(struct utp_transfer_cmd_desc));
 #endif
@@ -903,7 +935,7 @@ static int ufshcd_send_command(struct ufs_hba *hba, unsigned int task_tag)
 	printf("%s: Entered function\n", __func__);
 
 	ufshcd_writel(hba, 1 << task_tag, REG_UTP_TRANSFER_REQ_DOOR_BELL);
-	mb();
+	wmb();
 
 	//Dump regs
 	if (first) {
@@ -912,6 +944,7 @@ static int ufshcd_send_command(struct ufs_hba *hba, unsigned int task_tag)
 			printf("ufshcd_dump_regs failed: %d\n", ret);
 
 		ufshcd_ops_dbg_register_dump(hba);
+		ufshcd_print_tr(hba, task_tag, true);
 
 		first = false;
 	}
