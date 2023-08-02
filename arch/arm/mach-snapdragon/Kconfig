@@ -13,6 +13,7 @@ config SDM845
 	bool "Qualcomm Snapdragon 845 SoC"
 	default n
 	select LINUX_KERNEL_IMAGE_HEADER
+	select REGMAP
 
 config LNX_KRNL_IMG_TEXT_OFFSET_BASE
 	default 0x80000000
@@ -37,6 +38,7 @@ config TARGET_DRAGONBOARD410C
 	bool "96Boards Dragonboard 410C"
 	select BOARD_LATE_INIT
 	select ENABLE_ARM_SOC_BOOT0_HOOK
+	select REGMAP
 	help
 	  Support for 96Boards Dragonboard 410C. This board complies with
 	  96Board Open Platform Specifications. Features:
@@ -50,6 +52,7 @@ config TARGET_DRAGONBOARD410C
 
 config TARGET_DRAGONBOARD820C
 	bool "96Boards Dragonboard 820C"
+	select REGMAP
 	help
 	  Support for 96Boards Dragonboard 820C. This board complies with
 	  96Board Open Platform Specifications. Features:
@@ -83,6 +86,7 @@ config TARGET_STARQLTECHN
 config TARGET_QCS404EVB
 	bool "Qualcomm Technologies, Inc. QCS404 EVB"
 	select LINUX_KERNEL_IMAGE_HEADER
+	select REGMAP
 	help
 	  Support for Qualcomm Technologies, Inc. QCS404 evaluation board.
 	  Features:
@@ -93,6 +97,7 @@ config TARGET_QCS404EVB
 config TARGET_QRB4210RB2
 	bool "Qualcomm Technologies, Inc. QRB4210 RB2"
 	select LINUX_KERNEL_IMAGE_HEADER
+	select REGMAP
 	help
 	  Support for Qualcomm Technologies, Inc. QRB4210 RB2 board.
 	  Features:
@@ -105,6 +110,7 @@ config TARGET_QRB5165RB5
 	select LINUX_KERNEL_IMAGE_HEADER
 	select SYS_HAS_NONCACHED_MEMORY
 	select REMOTEPROC_QCOM_RPMH_RSC
+	select REGMAP
 	help
 	  Support for Qualcomm Technologies, Inc. QRB5165 RB5 board.
 	  Features:

@@ -12,7 +12,9 @@
 #include <dm.h>
 #include <errno.h>
 #include <asm/io.h>
+#include <regmap.h>
 #include <linux/bitops.h>
+
 #include "clock-snapdragon.h"
 
 /* CBCR register fields */
@@ -23,50 +25,55 @@ extern ulong msm_set_rate(struct clk *clk, ulong rate);
 extern int msm_enable(struct clk *clk);
 
 /* Enable clock controlled by CBC soft macro */
-void clk_enable_cbc(phys_addr_t cbcr)
+void clk_enable_cbc(struct regmap *map, uint off)
 {
-	setbits_le32(cbcr, CBCR_BRANCH_ENABLE_BIT);
+	int val;
+	regmap_update_bits(map, off, CBCR_BRANCH_ENABLE_BIT, CBCR_BRANCH_ENABLE_BIT);
 
-	while (readl(cbcr) & CBCR_BRANCH_OFF_BIT)
-		;
+	regmap_read_poll_timeout(map, off, val, !(val & CBCR_BRANCH_OFF_BIT),
+				 0, 1000000);
 }
 
-void clk_enable_gpll0(phys_addr_t base, const struct pll_vote_clk *gpll0)
+void clk_enable_gpll0(struct regmap *map, const struct pll_vote_clk *gpll0)
 {
-	if (readl(base + gpll0->status) & gpll0->status_bit)
+	int val;
+	regmap_read(map, gpll0->status, &val);
+	if (val & gpll0->status_bit)
 		return; /* clock already enabled */
 
-	setbits_le32(base + gpll0->ena_vote, gpll0->vote_bit);
+	regmap_update_bits(map, gpll0->ena_vote, gpll0->vote_bit, gpll0->vote_bit);
 
-	while ((readl(base + gpll0->status) & gpll0->status_bit) == 0)
-		;
+	regmap_read_poll_timeout(map, gpll0->status, val, val & gpll0->status_bit,
+				 0, 1000000);
 }
 
 #define BRANCH_ON_VAL (0)
 #define BRANCH_NOC_FSM_ON_VAL BIT(29)
 #define BRANCH_CHECK_MASK GENMASK(31, 28)
 
-void clk_enable_vote_clk(phys_addr_t base, const struct vote_clk *vclk)
+void clk_enable_vote_clk(struct regmap *map, const struct vote_clk *vclk)
 {
 	u32 val;
 
-	setbits_le32(base + vclk->ena_vote, vclk->vote_bit);
-	do {
-		val = readl(base + vclk->cbcr_reg);
-		val &= BRANCH_CHECK_MASK;
-	} while ((val != BRANCH_ON_VAL) && (val != BRANCH_NOC_FSM_ON_VAL));
+	regmap_update_bits(map, vclk->ena_vote, vclk->vote_bit, vclk->vote_bit);
+
+	regmap_read_poll_timeout(map, vclk->cbcr_reg, val,
+					((val & BRANCH_CHECK_MASK) != BRANCH_ON_VAL
+					&& (val & BRANCH_CHECK_MASK) != BRANCH_NOC_FSM_ON_VAL),
+				 0, 1000000);
 }
 
 #define APPS_CMD_RCGR_UPDATE BIT(0)
 
 /* Update clock command via CMD_RCGR */
-void clk_bcr_update(phys_addr_t apps_cmd_rcgr)
+void clk_bcr_update(struct regmap *map, uint off)
 {
-	setbits_le32(apps_cmd_rcgr, APPS_CMD_RCGR_UPDATE);
+	int val;
+	regmap_update_bits(map, off, APPS_CMD_RCGR_UPDATE, APPS_CMD_RCGR_UPDATE);
 
 	/* Wait for frequency to be updated. */
-	while (readl(apps_cmd_rcgr) & APPS_CMD_RCGR_UPDATE)
-		;
+	regmap_read_poll_timeout(map, off, val, !(val & APPS_CMD_RCGR_UPDATE),
+				 0, 1000000);
 }
 
 #define CFG_MODE_DUAL_EDGE (0x2 << 12) /* Counter mode */
@@ -76,7 +83,7 @@ void clk_bcr_update(phys_addr_t apps_cmd_rcgr)
 #define CFG_DIVIDER_MASK 0x1F
 
 /* root set rate for clocks with half integer and MND divider */
-void clk_rcg_set_rate_mnd(phys_addr_t base, const struct bcr_regs *regs,
+void clk_rcg_set_rate_mnd(struct regmap *map, const struct bcr_regs *regs,
 			  int div, int m, int n, int source)
 {
 	u32 cfg;
@@ -88,14 +95,12 @@ void clk_rcg_set_rate_mnd(phys_addr_t base, const struct bcr_regs *regs,
 	u32 d_val = ~(n);
 
 	/* Program MND values */
-	writel(m_val, base + regs->M);
-	writel(n_val, base + regs->N);
-	writel(d_val, base + regs->D);
+	regmap_write(map, regs->M, m_val);
+	regmap_write(map, regs->N, n_val);
+	regmap_write(map, regs->D, d_val);
 
 	/* setup src select and divider */
-	cfg  = readl(base + regs->cfg_rcgr);
-	cfg &= ~CFG_MASK;
-	cfg |= source & CFG_CLK_SRC_MASK; /* Select clock source */
+	cfg = source & CFG_CLK_SRC_MASK; /* Select clock source */
 
 	/* Set the divider; HW permits fraction dividers (+0.5), but
 	   for simplicity, we will support integers only */
@@ -105,22 +110,20 @@ void clk_rcg_set_rate_mnd(phys_addr_t base, const struct bcr_regs *regs,
 	if (n_val)
 		cfg |= CFG_MODE_DUAL_EDGE;
 
-	writel(cfg, base + regs->cfg_rcgr); /* Write new clock configuration */
+	regmap_update_bits(map, regs->cfg_rcgr, CFG_MASK, cfg); /* Write new clock configuration */
 
 	/* Inform h/w to start using the new config. */
-	clk_bcr_update(base + regs->cmd_rcgr);
+	clk_bcr_update(map, regs->cmd_rcgr);
 }
 
 /* root set rate for clocks with half integer and mnd_width=0 */
-void clk_rcg_set_rate(phys_addr_t base, const struct bcr_regs *regs, int div,
+void clk_rcg_set_rate(struct regmap *map, const struct bcr_regs *regs, int div,
 		      int source)
 {
 	u32 cfg;
 
 	/* setup src select and divider */
-	cfg  = readl(base + regs->cfg_rcgr);
-	cfg &= ~CFG_MASK;
-	cfg |= source & CFG_CLK_SRC_MASK; /* Select clock source */
+	cfg = source & CFG_CLK_SRC_MASK; /* Select clock source */
 
 	/*
 	 * Set the divider; HW permits fraction dividers (+0.5), but
@@ -129,19 +132,22 @@ void clk_rcg_set_rate(phys_addr_t base, const struct bcr_regs *regs, int div,
 	if (div)
 		cfg |= (2 * div - 1) & CFG_DIVIDER_MASK;
 
-	writel(cfg, base + regs->cfg_rcgr); /* Write new clock configuration */
+	regmap_update_bits(map, regs->cfg_rcgr, CFG_MASK, cfg); /* Write new clock configuration */
 
 	/* Inform h/w to start using the new config. */
-	clk_bcr_update(base + regs->cmd_rcgr);
+	clk_bcr_update(map, regs->cmd_rcgr);
 }
 
 static int msm_clk_probe(struct udevice *dev)
 {
 	struct msm_clk_priv *priv = dev_get_priv(dev);
+	int ret;
 
-	priv->base = dev_read_addr(dev);
-	if (priv->base == FDT_ADDR_T_NONE)
+	ret = regmap_init_mem(dev_ofnode(dev), &priv->regmap);
+	if (ret < 0) {
+		printf("Failed to init regmap: %d\n", ret);
 		return -EINVAL;
+	}
 
 	return 0;
 }

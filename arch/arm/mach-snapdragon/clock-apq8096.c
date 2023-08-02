@@ -44,11 +44,11 @@ static int clk_init_sdc(struct msm_clk_priv *priv, uint rate)
 {
 	int div = 3;
 
-	clk_enable_cbc(priv->base + SDCC2_AHB_CBCR);
-	clk_rcg_set_rate_mnd(priv->base, &sdc_regs, div, 0, 0,
+	clk_enable_cbc(priv->regmap, SDCC2_AHB_CBCR);
+	clk_rcg_set_rate_mnd(priv->regmap, &sdc_regs, div, 0, 0,
 			     CFG_CLK_SRC_GPLL0);
-	clk_enable_gpll0(priv->base, &gpll0_vote_clk);
-	clk_enable_cbc(priv->base + SDCC2_APPS_CBCR);
+	clk_enable_gpll0(priv->regmap, &gpll0_vote_clk);
+	clk_enable_cbc(priv->regmap, SDCC2_APPS_CBCR);
 
 	return rate;
 }
@@ -64,17 +64,17 @@ static const struct bcr_regs uart2_regs = {
 static int clk_init_uart(struct msm_clk_priv *priv)
 {
 	/* Enable AHB clock */
-	clk_enable_vote_clk(priv->base, &gcc_blsp2_ahb_clk);
+	clk_enable_vote_clk(priv->regmap, &gcc_blsp2_ahb_clk);
 
 	/* 7372800 uart block clock @ GPLL0 */
-	clk_rcg_set_rate_mnd(priv->base, &uart2_regs, 1, 192, 15625,
+	clk_rcg_set_rate_mnd(priv->regmap, &uart2_regs, 1, 192, 15625,
 			     CFG_CLK_SRC_GPLL0);
 
 	/* Vote for gpll0 clock */
-	clk_enable_gpll0(priv->base, &gpll0_vote_clk);
+	clk_enable_gpll0(priv->regmap, &gpll0_vote_clk);
 
 	/* Enable core clk */
-	clk_enable_cbc(priv->base + BLSP2_UART2_APPS_CBCR);
+	clk_enable_cbc(priv->regmap, BLSP2_UART2_APPS_CBCR);
 
 	return 0;
 }

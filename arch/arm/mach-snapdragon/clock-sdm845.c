@@ -74,7 +74,7 @@ static int clk_init_uart(struct msm_clk_priv *priv, uint rate)
 {
 	const struct freq_tbl *freq = qcom_find_freq(ftbl_gcc_qupv3_wrap0_s0_clk_src, rate);
 
-	clk_rcg_set_rate_mnd(priv->base, &uart2_regs,
+	clk_rcg_set_rate_mnd(priv->regmap, &uart2_regs,
 						freq->pre_div, freq->m, freq->n, freq->src);
 
 	return 0;

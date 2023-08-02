@@ -65,7 +65,8 @@ __weak int board_init(void)
 {
 	show_psci_version();
 
-	set_smmu_bypass_mode();
+	// Causes a fault on sdm845
+	//set_smmu_bypass_mode();
 	return 0;
 }
 

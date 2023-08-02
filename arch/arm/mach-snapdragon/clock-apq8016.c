@@ -56,12 +56,12 @@ static int clk_init_sdc(struct msm_clk_priv *priv, int slot, uint rate)
 	if (rate == 200000000)
 		div = 4;
 
-	clk_enable_cbc(priv->base + SDCC_AHB_CBCR(slot));
+	clk_enable_cbc(priv->regmap, SDCC_AHB_CBCR(slot));
 	/* 800Mhz/div, gpll0 */
-	clk_rcg_set_rate_mnd(priv->base, &sdc_regs[slot], div, 0, 0,
+	clk_rcg_set_rate_mnd(priv->regmap, &sdc_regs[slot], div, 0, 0,
 			     CFG_CLK_SRC_GPLL0);
-	clk_enable_gpll0(priv->base, &gpll0_vote_clk);
-	clk_enable_cbc(priv->base + SDCC_APPS_CBCR(slot));
+	clk_enable_gpll0(priv->regmap, &gpll0_vote_clk);
+	clk_enable_cbc(priv->regmap, SDCC_APPS_CBCR(slot));
 
 	return rate;
 }
@@ -78,17 +78,17 @@ static const struct bcr_regs uart2_regs = {
 static int clk_init_uart(struct msm_clk_priv *priv)
 {
 	/* Enable AHB clock */
-	clk_enable_vote_clk(priv->base, &gcc_blsp1_ahb_clk);
+	clk_enable_vote_clk(priv->regmap, &gcc_blsp1_ahb_clk);
 
 	/* 7372800 uart block clock @ GPLL0 */
-	clk_rcg_set_rate_mnd(priv->base, &uart2_regs, 1, 144, 15625,
+	clk_rcg_set_rate_mnd(priv->regmap, &uart2_regs, 1, 144, 15625,
 			     CFG_CLK_SRC_GPLL0);
 
 	/* Vote for gpll0 clock */
-	clk_enable_gpll0(priv->base, &gpll0_vote_clk);
+	clk_enable_gpll0(priv->regmap, &gpll0_vote_clk);
 
 	/* Enable core clk */
-	clk_enable_cbc(priv->base + BLSP1_UART2_APPS_CBCR);
+	clk_enable_cbc(priv->regmap, BLSP1_UART2_APPS_CBCR);
 
 	return 0;
 }

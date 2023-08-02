@@ -118,35 +118,35 @@ ulong msm_set_rate(struct clk *clk, ulong rate)
 	switch (clk->id) {
 	case GCC_BLSP1_UART2_APPS_CLK:
 		/* UART: 115200 */
-		clk_rcg_set_rate_mnd(priv->base, &uart2_regs, 0, 12, 125,
+		clk_rcg_set_rate_mnd(priv->regmap, &uart2_regs, 0, 12, 125,
 				     CFG_CLK_SRC_CXO);
-		clk_enable_cbc(priv->base + BLSP1_UART2_APPS_CBCR);
+		clk_enable_cbc(priv->regmap, BLSP1_UART2_APPS_CBCR);
 		break;
 	case GCC_BLSP1_AHB_CLK:
-		clk_enable_vote_clk(priv->base, &gcc_blsp1_ahb_clk);
+		clk_enable_vote_clk(priv->regmap, &gcc_blsp1_ahb_clk);
 		break;
 	case GCC_SDCC1_APPS_CLK:
 		/* SDCC1: 200MHz */
-		clk_rcg_set_rate_mnd(priv->base, &sdc_regs, 4, 0, 0,
+		clk_rcg_set_rate_mnd(priv->regmap, &sdc_regs, 4, 0, 0,
 				     CFG_CLK_SRC_GPLL0);
-		clk_enable_gpll0(priv->base, &gpll0_vote_clk);
-		clk_enable_cbc(priv->base + SDCC_APPS_CBCR(1));
+		clk_enable_gpll0(priv->regmap, &gpll0_vote_clk);
+		clk_enable_cbc(priv->regmap, SDCC_APPS_CBCR(1));
 		break;
 	case GCC_SDCC1_AHB_CLK:
-		clk_enable_cbc(priv->base + SDCC_AHB_CBCR(1));
+		clk_enable_cbc(priv->regmap, SDCC_AHB_CBCR(1));
 		break;
 	case GCC_ETH_RGMII_CLK:
 		if (rate == 250000000)
-			clk_rcg_set_rate_mnd(priv->base, &emac_regs, 2, 0, 0,
+			clk_rcg_set_rate_mnd(priv->regmap, &emac_regs, 2, 0, 0,
 					     CFG_CLK_SRC_GPLL1);
 		else if (rate == 125000000)
-			clk_rcg_set_rate_mnd(priv->base, &emac_regs, 4, 0, 0,
+			clk_rcg_set_rate_mnd(priv->regmap, &emac_regs, 4, 0, 0,
 					     CFG_CLK_SRC_GPLL1);
 		else if (rate == 50000000)
-			clk_rcg_set_rate_mnd(priv->base, &emac_regs, 10, 0, 0,
+			clk_rcg_set_rate_mnd(priv->regmap, &emac_regs, 10, 0, 0,
 					     CFG_CLK_SRC_GPLL1);
 		else if (rate == 5000000)
-			clk_rcg_set_rate_mnd(priv->base, &emac_regs, 2, 1, 50,
+			clk_rcg_set_rate_mnd(priv->regmap, &emac_regs, 2, 1, 50,
 					     CFG_CLK_SRC_GPLL1);
 		break;
 	default:
@@ -162,71 +162,71 @@ int msm_enable(struct clk *clk)
 
 	switch (clk->id) {
 	case GCC_USB30_MASTER_CLK:
-		clk_enable_cbc(priv->base + USB30_MASTER_CBCR);
-		clk_rcg_set_rate_mnd(priv->base, &usb30_master_regs, 4, 0, 0,
+		clk_enable_cbc(priv->regmap, USB30_MASTER_CBCR);
+		clk_rcg_set_rate_mnd(priv->regmap, &usb30_master_regs, 4, 0, 0,
 				     CFG_CLK_SRC_GPLL0);
 		break;
 	case GCC_SYS_NOC_USB3_CLK:
-		clk_enable_cbc(priv->base + SYS_NOC_USB3_CBCR);
+		clk_enable_cbc(priv->regmap, SYS_NOC_USB3_CBCR);
 		break;
 	case GCC_USB30_SLEEP_CLK:
-		clk_enable_cbc(priv->base + USB30_SLEEP_CBCR);
+		clk_enable_cbc(priv->regmap, USB30_SLEEP_CBCR);
 		break;
 	case GCC_USB30_MOCK_UTMI_CLK:
-		clk_enable_cbc(priv->base + USB30_MOCK_UTMI_CBCR);
+		clk_enable_cbc(priv->regmap, USB30_MOCK_UTMI_CBCR);
 		break;
 	case GCC_USB_HS_PHY_CFG_AHB_CLK:
-		clk_enable_cbc(priv->base + USB_HS_PHY_CFG_AHB_CBCR);
+		clk_enable_cbc(priv->regmap, USB_HS_PHY_CFG_AHB_CBCR);
 		break;
 	case GCC_USB2A_PHY_SLEEP_CLK:
-		clk_enable_cbc(priv->base + USB_HS_PHY_CFG_AHB_CBCR);
+		clk_enable_cbc(priv->regmap, USB_HS_PHY_CFG_AHB_CBCR);
 		break;
 	case GCC_ETH_PTP_CLK:
 		/* SPEED_1000: freq -> 250MHz */
-		clk_enable_cbc(priv->base + ETH_PTP_CBCR);
-		clk_enable_gpll0(priv->base, &gpll1_vote_clk);
-		clk_rcg_set_rate_mnd(priv->base, &emac_ptp_regs, 2, 0, 0,
+		clk_enable_cbc(priv->regmap, ETH_PTP_CBCR);
+		clk_enable_gpll0(priv->regmap, &gpll1_vote_clk);
+		clk_rcg_set_rate_mnd(priv->regmap, &emac_ptp_regs, 2, 0, 0,
 				     CFG_CLK_SRC_GPLL1);
 		break;
 	case GCC_ETH_RGMII_CLK:
 		/* SPEED_1000: freq -> 250MHz */
-		clk_enable_cbc(priv->base + ETH_RGMII_CBCR);
-		clk_enable_gpll0(priv->base, &gpll1_vote_clk);
-		clk_rcg_set_rate_mnd(priv->base, &emac_regs, 2, 0, 0,
+		clk_enable_cbc(priv->regmap, ETH_RGMII_CBCR);
+		clk_enable_gpll0(priv->regmap, &gpll1_vote_clk);
+		clk_rcg_set_rate_mnd(priv->regmap, &emac_regs, 2, 0, 0,
 				     CFG_CLK_SRC_GPLL1);
 		break;
 	case GCC_ETH_SLAVE_AHB_CLK:
-		clk_enable_cbc(priv->base + ETH_SLAVE_AHB_CBCR);
+		clk_enable_cbc(priv->regmap, ETH_SLAVE_AHB_CBCR);
 		break;
 	case GCC_ETH_AXI_CLK:
-		clk_enable_cbc(priv->base + ETH_AXI_CBCR);
+		clk_enable_cbc(priv->regmap, ETH_AXI_CBCR);
 		break;
 	case GCC_BLSP1_AHB_CLK:
-		clk_enable_vote_clk(priv->base, &gcc_blsp1_ahb_clk);
+		clk_enable_vote_clk(priv->regmap, &gcc_blsp1_ahb_clk);
 		break;
 	case GCC_BLSP1_QUP0_I2C_APPS_CLK:
-		clk_enable_cbc(priv->base + BLSP1_QUP0_I2C_APPS_CBCR);
-		clk_rcg_set_rate(priv->base, &blsp1_qup0_i2c_apps_regs, 0,
+		clk_enable_cbc(priv->regmap, BLSP1_QUP0_I2C_APPS_CBCR);
+		clk_rcg_set_rate(priv->regmap, &blsp1_qup0_i2c_apps_regs, 0,
 				 CFG_CLK_SRC_CXO);
 		break;
 	case GCC_BLSP1_QUP1_I2C_APPS_CLK:
-		clk_enable_cbc(priv->base + BLSP1_QUP1_I2C_APPS_CBCR);
-		clk_rcg_set_rate(priv->base, &blsp1_qup1_i2c_apps_regs, 0,
+		clk_enable_cbc(priv->regmap, BLSP1_QUP1_I2C_APPS_CBCR);
+		clk_rcg_set_rate(priv->regmap, &blsp1_qup1_i2c_apps_regs, 0,
 				 CFG_CLK_SRC_CXO);
 		break;
 	case GCC_BLSP1_QUP2_I2C_APPS_CLK:
-		clk_enable_cbc(priv->base + BLSP1_QUP2_I2C_APPS_CBCR);
-		clk_rcg_set_rate(priv->base, &blsp1_qup2_i2c_apps_regs, 0,
+		clk_enable_cbc(priv->regmap, BLSP1_QUP2_I2C_APPS_CBCR);
+		clk_rcg_set_rate(priv->regmap, &blsp1_qup2_i2c_apps_regs, 0,
 				 CFG_CLK_SRC_CXO);
 		break;
 	case GCC_BLSP1_QUP3_I2C_APPS_CLK:
-		clk_enable_cbc(priv->base + BLSP1_QUP3_I2C_APPS_CBCR);
-		clk_rcg_set_rate(priv->base, &blsp1_qup3_i2c_apps_regs, 0,
+		clk_enable_cbc(priv->regmap, BLSP1_QUP3_I2C_APPS_CBCR);
+		clk_rcg_set_rate(priv->regmap, &blsp1_qup3_i2c_apps_regs, 0,
 				 CFG_CLK_SRC_CXO);
 		break;
 	case GCC_BLSP1_QUP4_I2C_APPS_CLK:
-		clk_enable_cbc(priv->base + BLSP1_QUP4_I2C_APPS_CBCR);
-		clk_rcg_set_rate(priv->base, &blsp1_qup4_i2c_apps_regs, 0,
+		clk_enable_cbc(priv->regmap, BLSP1_QUP4_I2C_APPS_CBCR);
+		clk_rcg_set_rate(priv->regmap, &blsp1_qup4_i2c_apps_regs, 0,
 				 CFG_CLK_SRC_CXO);
 		break;
 	default:

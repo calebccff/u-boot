@@ -7,6 +7,8 @@
 #ifndef _CLOCK_SNAPDRAGON_H
 #define _CLOCK_SNAPDRAGON_H
 
+#include <linux/types.h>
+
 #define CFG_CLK_SRC_CXO   (0 << 8)
 #define CFG_CLK_SRC_GPLL0 (1 << 8)
 #define CFG_CLK_SRC_GPLL0_EVEN (6 << 8)
@@ -35,17 +37,19 @@ struct bcr_regs {
 	uintptr_t D;
 };
 
+struct regmap;
+
 struct msm_clk_priv {
-	phys_addr_t base;
+	struct regmap *regmap;
 };
 
-void clk_enable_gpll0(phys_addr_t base, const struct pll_vote_clk *gpll0);
-void clk_bcr_update(phys_addr_t apps_cmd_rgcr);
-void clk_enable_cbc(phys_addr_t cbcr);
-void clk_enable_vote_clk(phys_addr_t base, const struct vote_clk *vclk);
-void clk_rcg_set_rate_mnd(phys_addr_t base, const struct bcr_regs *regs,
+void clk_enable_gpll0(struct regmap *map, const struct pll_vote_clk *gpll0);
+void clk_bcr_update(struct regmap *map, uint off);
+void clk_enable_cbc(struct regmap *map, uint off);
+void clk_enable_vote_clk(struct regmap *map, const struct vote_clk *vclk);
+void clk_rcg_set_rate_mnd(struct regmap *map, const struct bcr_regs *regs,
 			  int div, int m, int n, int source);
-void clk_rcg_set_rate(phys_addr_t base, const struct bcr_regs *regs, int div,
+void clk_rcg_set_rate(struct regmap *map, const struct bcr_regs *regs, int div,
 		      int source);
 
 #endif
