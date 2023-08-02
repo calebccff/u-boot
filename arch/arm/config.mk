@@ -29,8 +29,24 @@ PLATFORM_CPPFLAGS += -D__ARM__
 
 ifdef CONFIG_ARM64
 PLATFORM_ELFFLAGS += -B aarch64 -O elf64-littleaarch64
+EFIPAYLOAD_BFDARCH = aarch64
+EFIARCH = aarch64
+EFIPAYLOAD_BFDTARGET = elf64-littleaarch64
 else
 PLATFORM_ELFFLAGS += -B arm -O elf32-littlearm
+EFIPAYLOAD_BFDARCH = arm
+EFIARCH = arm
+EFIPAYLOAD_BFDTARGET = elf32-littlearm
+endif
+
+LDSCRIPT_EFI := $(srctree)/arch/arm/lib/elf_$(EFIARCH)_efi.lds
+
+ifeq ($(CONFIG_EFI_APP),y)
+
+PLATFORM_CPPFLAGS += $(CFLAGS_EFI)
+LDFLAGS_FINAL += -znocombreloc -shared
+LDSCRIPT := $(LDSCRIPT_EFI)
+
 endif
 
 # Choose between ARM/Thumb instruction sets

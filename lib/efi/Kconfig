@@ -1,6 +1,5 @@
 config EFI
 	bool "Support running U-Boot from EFI"
-	depends on X86
 	imply X86_TSC_READ_BASE
 	help
 	  U-Boot can be started from EFI on certain platforms. This allows
@@ -10,7 +9,7 @@ config EFI
 
 choice
 	prompt "Select EFI mode to use"
-	depends on X86 && EFI
+	depends on EFI
 
 config EFI_APP
 	bool "Support running as an EFI application"

@@ -16,7 +16,9 @@
 #include <errno.h>
 #include <malloc.h>
 #include <ns16550.h>
+#ifdef CONFIG_X86
 #include <asm/cpu.h>
+#endif
 #include <asm/io.h>
 #include <linux/err.h>
 #include <linux/types.h>
@@ -28,7 +30,8 @@
  *	platforms will use memory access
  * get_codeseg32() is only meaningful on x86
  */
-#error "This file needs to be ported for use on architectures"
+//#error "This file needs to be ported for use on architectures"
+#define regparm(x) 
 #endif
 
 static bool use_uart;
@@ -89,7 +92,10 @@ static void _debug_uart_putc(int ch)
 	putc(ch);
 }
 
+// Assume ARM platforms have their own debug UART driver
+#ifdef CONFIG_X86
 DEBUG_UART_FUNCS
+#endif
 
 void *memcpy(void *dest, const void *src, size_t size)
 {
@@ -116,7 +122,7 @@ void *memset(void *inptr, int ch, size_t size)
 
 static void jump_to_uboot(ulong cs32, ulong addr, ulong info)
 {
-#ifdef CONFIG_EFI_STUB_32BIT
+#if defined(CONFIG_EFI_STUB_32BIT) || !defined(CONFIG_X86)
 	/*
 	 * U-Boot requires these parameters in registers, not on the stack.
 	 * See _x86boot_start() for this code.
@@ -130,7 +136,7 @@ static void jump_to_uboot(ulong cs32, ulong addr, ulong info)
 #endif
 }
 
-#ifdef CONFIG_EFI_STUB_64BIT
+#if defined(CONFIG_EFI_STUB_64BIT) && defined(CONFIG_X86_64)
 static void get_gdt(struct desctab_info *info)
 {
 	asm volatile ("sgdt %0" : : "m"(*info) : "memory");
@@ -145,6 +151,7 @@ static inline unsigned long read_cr3(void)
 	return val;
 }
 
+#ifdef CONFIG_X86
 /**
  * get_codeseg32() - Find the code segment to use for 32-bit code
  *
@@ -225,6 +232,7 @@ static int get_codeseg32(void)
 
 	return cs32;
 }
+#endif
 
 /**
  * setup_info_table() - sets up a table containing information from EFI
@@ -310,7 +318,7 @@ efi_status_t EFIAPI efi_main(efi_handle_t image,
 	struct efi_entry_systable table;
 	efi_guid_t efi_gop_guid = EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID;
 	efi_status_t ret;
-	int cs32;
+	int cs32 = 0;
 
 	ret = efi_init(priv, "Payload", image, sys_table);
 	if (ret) {
@@ -320,9 +328,11 @@ efi_status_t EFIAPI efi_main(efi_handle_t image,
 	}
 	efi_set_priv(priv);
 
+#ifdef CONFIG_X86
 	cs32 = get_codeseg32();
 	if (cs32 < 0)
 		return EFI_UNSUPPORTED;
+#endif
 
 	ret = efi_store_memory_map(priv);
 	if (ret)

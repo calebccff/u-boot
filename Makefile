@@ -1621,7 +1621,8 @@ u-boot-payload.lds: $(LDSCRIPT_EFI) FORCE
 # Rule to link the EFI payload which contains a stub and a U-Boot binary
 quiet_cmd_u-boot_payload ?= LD      $@
       cmd_u-boot_payload ?= $(LD) $(LDFLAGS_EFI_PAYLOAD) -o $@ \
-      -T u-boot-payload.lds arch/x86/cpu/call32.o \
+      -T u-boot-payload.lds $(if $(CONFIG_X86), arch/x86/cpu/call32.o) \
+      drivers/serial/serial_msm_geni.o \
       lib/efi/efi.o lib/efi/efi_stub.o u-boot.bin.o \
       $(addprefix arch/$(ARCH)/lib/,$(EFISTUB))
 

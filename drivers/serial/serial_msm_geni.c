@@ -18,7 +18,6 @@
 #include <linux/delay.h>
 #include <malloc.h>
 #include <serial.h>
-#include <watchdog.h>
 #include <linux/bug.h>
 
 #define UART_OVERSAMPLING	32

@@ -13,16 +13,16 @@
 
 int efi_info_get(enum efi_entry_t type, void **datap, int *sizep)
 {
+	int ret = -EPROTONOSUPPORT;
+#ifdef CONFIG_X86
 	struct efi_entry_hdr *entry;
 	struct efi_info_hdr *info;
-	int ret;
 
 	if (!gd->arch.table)
 		return -ENODATA;
 
 	info = map_sysmem(gd->arch.table, 0);
 	if (info->version != EFI_TABLE_VERSION) {
-		ret = -EPROTONOSUPPORT;
 		goto err;
 	}
 
@@ -42,6 +42,6 @@ int efi_info_get(enum efi_entry_t type, void **datap, int *sizep)
 	ret = -ENOENT;
 err:
 	unmap_sysmem(info);
-
+#endif
 	return ret;
 }

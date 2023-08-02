@@ -250,8 +250,10 @@ static int do_efi_mem(struct cmd_tbl *cmdtp, int flag, int argc,
 		desc_size = map->desc_size;
 		version = map->version;
 	}
+	#ifdef CONFIG_X86
 	printf("EFI table at %lx, memory map %p, size %x, key %x, version %x, descr. size %#x\n",
 	       gd->arch.table, orig, size, key, version, desc_size);
+	#endif
 	if (version != EFI_MEM_DESC_VERSION) {
 		printf("Incorrect memory map version\n");
 		ret = -EPROTONOSUPPORT;
