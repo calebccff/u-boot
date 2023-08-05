@@ -311,7 +311,7 @@ int msm_enable(struct clk *clk)
 {
 	struct msm_clk_priv *priv = dev_get_priv(clk->dev);
 
-	dev_info(clk->dev, "clk %s\n", gcc_clk_names[clk->id]);
+	//dev_info(clk->dev, "clk %s\n", gcc_clk_names[clk->id]);
 
 	// if (clk->id != GCC_UFS_PHY_AXI_CLK) {
 	// 	printf("Ignoring clk %s\n", gcc_clk_names[clk->id]);
