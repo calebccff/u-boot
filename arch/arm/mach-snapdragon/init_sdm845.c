@@ -41,19 +41,20 @@ static void show_psci_version(void)
 
 #define ARM_SMMU_GR0_sCR0	(0x15000000UL)
 #define ARM_SMMU_sCR0_USFCFG	BIT(10)
+/* Stream mapping registers */
+#define ARM_SMMU_GR0_SMR(n)		(0x800 + ((n) << 2))
+#define ARM_SMMU_SMR_VALID		BIT(31)
+#define ARM_SMMU_SMR_MASK		GENMASK(31, 16)
+#define ARM_SMMU_SMR_ID			GENMASK(15, 0)
 
-void set_smmu_bypass_mode(void)
+void smmu_init(void)
 {
-	u32 reg = readl(ARM_SMMU_GR0_sCR0);
-	printf("%s: Checking SMMU config. Initial sCR0 reg value is 0x%x\n",
-		       __func__, reg);
+	// u32 reg = readl(ARM_SMMU_GR0_sCR0);
+	// printf("%s: Checking SMMU config. Initial sCR0 reg value is 0x%x\n",
+	// 	       __func__, reg);
 
-	/* bypass SMMU */
-	reg &= ~ARM_SMMU_sCR0_USFCFG;
-	writel(reg, ARM_SMMU_GR0_sCR0);
-
-	printf("%s: Setting SMMU in bypass mode. Writing 0x%x at 0x%lx\n", __func__,
-		       reg, ARM_SMMU_GR0_sCR0);
+	// icache_disable();
+	// dcache_disable();
 }
 
 void reset_cpu(void)
@@ -65,8 +66,7 @@ __weak int board_init(void)
 {
 	show_psci_version();
 
-	// Causes a fault on sdm845
-	//set_smmu_bypass_mode();
+	smmu_init();
 	return 0;
 }
 

@@ -58,11 +58,9 @@ static int ufs_qcom_clk_get(struct udevice *dev,
 	struct clk *clk;
 	int err = 0;
 
-	printf("%s: Entered function\n", __func__);
 	clk = devm_clk_get(dev, name);
 	if (!IS_ERR(clk)) {
 		*clk_out = clk;
-		printf("%s: Exiting function successfully\n", __func__);
 		return 0;
 	}
 
@@ -84,7 +82,7 @@ static int ufs_qcom_clk_enable(struct udevice *dev,
 {
 	int err = 0;
 
-	printf("%s: Entered function\n", __func__);
+	//printf("%s: Entered function\n", __func__);
 	err = clk_prepare_enable(clk);
 	if (err)
 		dev_err(dev, "%s: %s enable failed %d\n", __func__, name, err);
@@ -423,9 +421,9 @@ static int ufs_qcom_power_up_sequence(struct ufs_hba *hba)
 	/* get phy */
 	ret = generic_phy_get_by_name(hba->dev, "ufsphy", &phy);
 	if (ret) {
-		dev_warn(hba->dev, "%s: Unable to get QMP ufs phy, ret = %d\n",
+		dev_warn(hba->dev, "%s: Unable to get QMP ufs phy, ret = %d (IGNORE)\n",
 			 __func__, ret);
-		return ret;
+		return 0;
 	}
 
 	/* phy initialization */
@@ -462,7 +460,6 @@ static int ufs_qcom_check_hibern8(struct ufs_hba *hba)
 	int err, retry_count = 50;
 	u32 tx_fsm_val = 0;
 
-	printk("%s: Entering function\n", __func__);
 	do {
 		err = ufshcd_dme_get(hba,
 				UIC_ARG_MIB_SEL(MPHY_TX_FSM_STATE,
@@ -525,7 +522,8 @@ static int ufs_qcom_hce_enable_notify(struct ufs_hba *hba,
 	struct ufs_qcom_priv *priv = dev_get_priv(hba->dev);
 	int err = 0;
 
-	printf("%s: Entered function\n", __func__);
+	printf("%s: %s\n", __func__, status == PRE_CHANGE ? "PRE_CHANGE" :
+		"POST_CHANGE");
 	switch (status) {
 	case PRE_CHANGE:
 		ufs_qcom_power_up_sequence(hba);
@@ -776,8 +774,8 @@ static int ufs_qcom_link_startup_notify(struct ufs_hba *hba,
 			 * set unipro core clock cycles to 150 & clear clock
 			 * divider
 			 */
-			/*err = ufs_qcom_set_dme_vs_core_clk_ctrl_clear_div(hba,
-									  150);*/
+			err = ufs_qcom_set_dme_vs_core_clk_ctrl_clear_div(hba,
+									  150);
 
 		/*
 		 * Some UFS devices (and may be host) have issues if LCC is
@@ -818,9 +816,9 @@ static int ufs_qcom_init(struct ufs_hba *hba)
 	priv->hba = hba;
 
 	/* setup clocks */
-	//ufs_qcom_setup_clocks(hba, true, PRE_CHANGE);
-	//ufs_qcom_setup_clocks(hba, true, POST_CHANGE);
-	
+	ufs_qcom_setup_clocks(hba, true, PRE_CHANGE);
+	ufs_qcom_setup_clocks(hba, true, POST_CHANGE);
+
 	ufs_qcom_get_controller_revision(hba, &priv->hw_ver.major,
 		&priv->hw_ver.minor, &priv->hw_ver.step);
 	dev_info(hba->dev, "Qcom UFS HC version: %d.%d.%d\n", priv->hw_ver.major,
@@ -855,8 +853,8 @@ static int ufs_qcom_init(struct ufs_hba *hba)
 	 * Power up the PHY using the minimum supported gear (UFS_HS_G2).
 	 * Switching to max gear will be performed during reinit if supported.
 	 */
-	//priv->hs_gear = UFS_HS_G2;
 	priv->hs_gear = UFS_HS_G3;
+	//priv->hs_gear = UFS_HS_G3;
 
 	printf("%s: Exiting function with success\n", __func__);
 	return 0;

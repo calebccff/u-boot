@@ -82,6 +82,8 @@ static int do_sysboot(struct cmd_tbl *cmdtp, int flag, int argc,
 		env_set("bootfile", filename);
 	}
 
+	printf("Retrieving file: %s\n", filename);
+
 	if (strstr(argv[3], "ext2")) {
 		info.fstype = FS_TYPE_EXT;
 	} else if (strstr(argv[3], "fat")) {
@@ -100,6 +102,9 @@ static int do_sysboot(struct cmd_tbl *cmdtp, int flag, int argc,
 		return 1;
 	}
 
+	printf("Reading file %s to addr 0x%lx from %s:%s\n", filename,
+	       pxefile_addr_r, info.ifname, info.dev_part_str);
+
 	if (pxe_setup_ctx(&ctx, cmdtp, sysboot_read_file, &info, true,
 			  filename)) {
 		printf("Out of memory\n");
@@ -111,6 +116,8 @@ static int do_sysboot(struct cmd_tbl *cmdtp, int flag, int argc,
 		pxe_destroy_ctx(&ctx);
 		return 1;
 	}
+
+	printf("Loaded file:\n%s\n", (char *)pxefile_addr_r);
 
 	ret = pxe_process(&ctx, pxefile_addr_r, prompt);
 	pxe_destroy_ctx(&ctx);

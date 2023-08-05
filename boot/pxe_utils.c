@@ -1423,6 +1423,8 @@ struct pxe_menu *parse_pxefile(struct pxe_context *ctx, unsigned long menucfg)
 
 	memset(cfg, 0, sizeof(struct pxe_menu));
 
+	printf("Allocated pxe_menu @ 0x%lx\n", (unsigned long)cfg);
+
 	INIT_LIST_HEAD(&cfg->labels);
 
 	buf = map_sysmem(menucfg, 0);

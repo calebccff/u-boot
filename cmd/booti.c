@@ -4,6 +4,8 @@
  * Wolfgang Denk, DENX Software Engineering, wd@denx.de.
  */
 
+#define DEBUG 1
+
 #include <common.h>
 #include <bootm.h>
 #include <command.h>

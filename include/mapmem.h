@@ -15,6 +15,7 @@
 # else
 static inline void *map_sysmem(phys_addr_t paddr, unsigned long len)
 {
+	printf("Mapping %llx:%lx\n", paddr, len);
 	return (void *)(uintptr_t)paddr;
 }
 

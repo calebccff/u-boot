@@ -13,7 +13,17 @@
 	compatible = "shift,axolotl", "qcom,sdm845", "qcom,mtp";
 
 	chosen {
-		stdout-path = "serial0:115200n8";
+		stdout-path = "serial0:3000000n8";
+	};
+
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		ufs-dma@9ba9c000 {
+			reg = <0x9ba9c000 0x1400>;
+			no-map;
+		};
 	};
 
 	aliases {

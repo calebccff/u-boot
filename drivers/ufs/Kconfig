@@ -19,7 +19,7 @@ config QCOM_UFS
 	bool "Qualcomm Host Controller driver for UFS"
 	depends on UFS
 	depends on ARCH_SNAPDRAGON
-        help
+	help
 	  This selects the platform driver for the UFS host
 	  controller present on Qualcomm Snapdragon SoCs.
 

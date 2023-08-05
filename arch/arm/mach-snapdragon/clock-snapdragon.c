@@ -28,6 +28,7 @@ extern int msm_enable(struct clk *clk);
 void clk_enable_cbc(struct regmap *map, uint off)
 {
 	int val;
+
 	regmap_update_bits(map, off, CBCR_BRANCH_ENABLE_BIT, CBCR_BRANCH_ENABLE_BIT);
 
 	regmap_read_poll_timeout(map, off, val, !(val & CBCR_BRANCH_OFF_BIT),
