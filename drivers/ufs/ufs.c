@@ -1054,6 +1054,9 @@ static int ufshcd_exec_dev_cmd(struct ufs_hba *hba, enum dev_cmd_type cmd_type,
 	int err;
 	int resp;
 
+	icache_disable();
+	dcache_disable();
+
 	printf("%s: Entered function\n", __func__);
 	err = ufshcd_comp_devman_upiu(hba, cmd_type);
 	if (err)
@@ -1070,6 +1073,9 @@ static int ufshcd_exec_dev_cmd(struct ufs_hba *hba, enum dev_cmd_type cmd_type,
 		dev_err(hba->dev, "Error in OCS:%d\n", err);
 		return -EINVAL;
 	}
+
+	icache_enable();
+	dcache_enable();
 
 	printf("%s: get resp\n", __func__);
 	resp = ufshcd_get_req_rsp(hba->ucd_rsp_ptr);
@@ -1592,11 +1598,17 @@ static int ufs_scsi_exec(struct udevice *scsi_dev, struct scsi_cmd *pccb)
 	int ocs, result = 0;
 	u8 scsi_status;
 
+	icache_disable();
+	dcache_disable();
+
 	ufshcd_prepare_req_desc_hdr(hba, req_desc, &upiu_flags, pccb->dma_dir);
 	ufshcd_prepare_utp_scsi_cmd_upiu(hba, pccb, upiu_flags);
 	prepare_prdt_table(hba, pccb);
 
 	ufshcd_send_command(hba, TASK_TAG);
+
+	icache_enable();
+	dcache_enable();
 
 	ocs = ufshcd_get_tr_ocs(hba);
 	switch (ocs) {
