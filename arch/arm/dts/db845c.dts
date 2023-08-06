@@ -1,0 +1,35 @@
+// SPDX-License-Identifier: GPL-2.0+
+/*
+ * Device Tree file for SHIFT6mq
+ *
+ */
+
+/dts-v1/;
+
+#include "sdm845.dtsi"
+
+/ {
+	model = "Thundercomm Dragonboard 845c";
+	compatible = "thundercomm,db845c", "qcom,sdm845";
+
+	aliases {
+		serial0 = &debug_uart;
+	};
+
+	memory {
+		device_type = "memory";
+		reg = <0 0x80000000 0 0xFDFA0000>;
+	};
+};
+
+&debug_uart {
+	status = "okay";
+};
+
+&framebuffer {
+	width = <1920>;
+	height = <1080>;
+	stride = <(1920 * 4)>;
+};
+
+#include "starqltechn-uboot.dtsi"

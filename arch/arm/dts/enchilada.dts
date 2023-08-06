@@ -1,0 +1,23 @@
+// SPDX-License-Identifier: GPL-2.0+
+/*
+ * Device Tree file for SDM845 phones with ~1080p displays
+ * and 8GB of RAM.
+ */
+
+/dts-v1/;
+
+#include "sdm845-phone.dtsi"
+
+/* FIXME: this device crashdumps somewhere in "bootefi" */
+
+/ {
+	memory {
+		device_type = "memory";
+		reg = <0 0x80000000 0 0xffffffff
+		       1 0x80000000 0 0xfc8a0000>;
+	};
+};
+
+&framebuffer {
+	height = <2280>;
+};

@@ -7,16 +7,38 @@
 
 #include <init.h>
 #include <env.h>
+#include <fdt_support.h>
+#include <efi_loader.h>
 #include <common.h>
 #include <asm/system.h>
 #include <asm/gpio.h>
 #include <dm.h>
+#include <asm/io.h>
+#include <asm/psci.h>
+#include <linux/arm-smccc.h>
+#include <linux/psci.h>
 
 DECLARE_GLOBAL_DATA_PTR;
 
 int dram_init(void)
 {
 	return fdtdec_setup_mem_size_base();
+}
+
+int dram_init_banksize(void)
+{
+	return fdtdec_setup_memory_banksize();
+}
+
+static void show_psci_version(void)
+{
+	struct arm_smccc_res res;
+
+	arm_smccc_smc(ARM_PSCI_0_2_FN_PSCI_VERSION, 0, 0, 0, 0, 0, 0, 0, &res);
+
+	printf("PSCI:  v%ld.%ld\n",
+	       PSCI_VERSION_MAJOR(res.a0),
+		PSCI_VERSION_MINOR(res.a0));
 }
 
 void reset_cpu(void)
@@ -26,7 +48,120 @@ void reset_cpu(void)
 
 __weak int board_init(void)
 {
+	show_psci_version();
+
 	return 0;
+}
+
+struct board_info {
+	char *display_match;
+	char *pretty_name;
+	char *codename;
+	char *devicetree;
+	int width;
+	int height;
+	unsigned int bootdev : 8;
+	unsigned int bootpart : 8;
+};
+
+static const struct board_info sdm845_boards[] = {
+	{
+		.display_match = "dsi_lt9611_1080_video_display",
+		.pretty_name = "Qualcomm RB3",
+		.codename = "db845c",
+		.devicetree = "/dtbs/qcom/sdm845-db845c.dtb",
+		.width = 1920,
+		.height = 1080,
+		.bootdev = 4, // modem_a
+		.bootpart = 4,
+	}, {
+		.display_match = "dsi_shift6mq_rm69299_1080p_video_display",
+		.pretty_name = "SHIFT6mq",
+		.codename = "axolotl",
+		.devicetree = "/dtbs/qcom/sdm845-shift-axolotl.dtb",
+		.width = 1080,
+		.height = 2160,
+		.bootdev = 0,
+		.bootpart = 7, // super
+	}, {
+		.display_match = "dsi_samsung_sofef00_m_cmd_display", // XXX: CHECK
+		.pretty_name = "OnePlus 6",
+		.codename = "enchilada",
+		.devicetree = "/dtbs/qcom/sdm845-oneplus-enchilada.dtb",
+		.width = 1080,
+		.height = 2280,
+		.bootdev = 4,
+		.bootpart = 4, // XXX: CHECK
+	}
+};
+
+static const struct board_info *get_board(const char *display)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(sdm845_boards); i++) {
+		if (!strncmp(display, sdm845_boards[i].display_match, strlen(sdm845_boards[i].display_match)))
+			return &sdm845_boards[i];
+	}
+
+	return NULL;
+}
+
+static int get_cmdline_option(const char *cmdline, const char *key, char *out, int out_len)
+{
+	const char *p, *p_end;
+	int len;
+
+	p = strstr(cmdline, key);
+	if (!p)
+		return -1;
+
+	p += strlen(key);
+	p_end = strstr(p, " ");
+	if (!p_end)
+		return -1;
+
+	len = p_end - p;
+	if (len > out_len)
+		len = out_len;
+
+	strncpy(out, p, len);
+	out[len] = '\0';
+
+	return 0;
+}
+
+#define DISPLAY_KEY "msm_drm.dsi_display0="
+#define SLOT_SUFFIX_KEY "androidboot.slot_suffix="
+
+static void init_sdm845_board(const char *cmdline)
+{
+	char display[64], slot[3];
+	const struct board_info *board;
+
+	if (get_cmdline_option(cmdline, DISPLAY_KEY, display, sizeof(display)) < 0) {
+		printf("Failed to get display info from cmdline\n");
+		return;
+	}
+
+	if (get_cmdline_option(cmdline, SLOT_SUFFIX_KEY, slot, sizeof(slot)) < 0) {
+		printf("Failed to get slot suffix from cmdline\n");
+		return;
+	}
+
+	board = get_board(display);
+	if (!board) {
+		printf("Failed to detect board for display: %s\n", display);
+		return;
+	}
+
+	printf("Detected board: %s (%s)\n", board->pretty_name, board->codename);
+
+	env_set("board", board->codename);
+	env_set("devicetree", board->devicetree);
+	env_set("boot_slot", &slot[1]);
+	env_set("bootdev", simple_itoa(board->bootdev));
+	env_set("bootpart", simple_itoa(board->bootpart));
 }
 
 /* Check for vol- and power buttons */
@@ -78,23 +213,52 @@ __weak int misc_init_r(void)
 		env_set("key_power", "0");
 	}
 
+	/* Get KASLR seed from the FDT provided by ABL */
+	const void *prevbl_fdt = (void *)env_get_ulong("prevbl_fdt_addr", 16, 0);
+	if (!prevbl_fdt) {
+		printf("ABL did not pass FDT to U-Boot\n");
+		return 0;
+	}
+	node = fdt_path_offset(prevbl_fdt, "/chosen");
+	if (!node) {
+		printf("ABL did not pass chosen node to U-Boot\n");
+		return 0;
+	}
+
+	const uint64_t *kaslr_seed = fdt_getprop(prevbl_fdt, node, "kaslr-seed", NULL);
+	env_set_hex("KASLR", *kaslr_seed);
+
+	const char *cmdline = fdt_getprop(prevbl_fdt, node, "bootargs", NULL);
+
+	init_sdm845_board(cmdline);
+
+	return 0;
+}
+
+int ft_board_setup(void *fdt, struct bd_info *bd)
+{
+	const char *slot;
+	uint64_t kaslr_seed;
+	int ret;
+
+	slot = env_get("boot_slot");
+	kaslr_seed = env_get_hex("KASLR", 0);
+
 	/*
-	 * search for kaslr address, set by primary bootloader by searching first
-	 * 0x100 relocated bytes at u-boot's initial load address range
+	 * We can't customise the cmdline that grub passes to the kernel,
+	 * but we need to somehow pass on the boot slot property from ABL
 	 */
-	uintptr_t start = gd->ram_base;
-	uintptr_t end = start + 0x800000;
-	u8 *addr = (u8 *)start;
-	phys_addr_t *relocaddr = (phys_addr_t *)gd->relocaddr;
-	u32 block_size = 0x1000;
+	ret = fdt_find_and_setprop(fdt, "/chosen", "boot-slot", slot, strlen(slot), 1);
+	if (ret < 0) {
+		printf("Failed to set boot-slot property\n");
+		return ret;
+	}
 
-	while (memcmp(addr, relocaddr, 0x100) && (uintptr_t)addr < end)
-		addr += block_size;
-
-	if ((uintptr_t)addr >= end)
-		printf("KASLR not found in range 0x%lx - 0x%lx", start, end);
-	else
-		env_set_addr("KASLR", addr);
+	ret = fdt_find_and_setprop(fdt, "/chosen", "kaslr-seed", &kaslr_seed, sizeof(kaslr_seed), 1);
+	if (ret < 0) {
+		printf("Failed to set kaslr-seed property\n");
+		return ret;
+	}
 
 	return 0;
 }

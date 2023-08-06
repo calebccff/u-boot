@@ -1,0 +1,12 @@
+if TARGET_SDM845
+
+config SYS_BOARD
+	default "sdm845"
+
+config SYS_CONFIG_NAME
+	default "sdm845"
+
+config SYS_VENDOR
+	default "qualcomm"
+
+endif

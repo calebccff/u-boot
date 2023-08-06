@@ -20,6 +20,18 @@ config LNX_KRNL_IMG_TEXT_OFFSET_BASE
 choice
 	prompt "Snapdragon board select"
 
+config TARGET_SDM845
+	bool "SDM845 common target"
+	help
+	  Support for boards based on Qualcomm Snapdragon 845 SoC.
+	  Supported devices and associated DEFAULT_DEVICE_TREE:
+	    * Robotics RB3 Development Platform ("db845c")
+	    * phones with 8GB ram ("sdm845-phone-8gb")
+	    * TODO: phones with 6GB ram ("sdm845-phone-6gb")
+	    * phones with 4GB ram ("sdm845-phone-4gb")
+	select MISC_INIT_R
+	select SDM845
+
 config TARGET_DRAGONBOARD410C
 	bool "96Boards Dragonboard 410C"
 	select BOARD_LATE_INIT
@@ -104,6 +116,7 @@ endchoice
 source "board/qualcomm/dragonboard410c/Kconfig"
 source "board/qualcomm/dragonboard820c/Kconfig"
 source "board/qualcomm/dragonboard845c/Kconfig"
+source "board/qualcomm/sdm845/Kconfig"
 source "board/samsung/starqltechn/Kconfig"
 source "board/qualcomm/qcs404-evb/Kconfig"
 source "board/qualcomm/qrb4210-rb2/Kconfig"

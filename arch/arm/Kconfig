@@ -1036,6 +1036,8 @@ config ARCH_SNAPDRAGON
 	select ARM64
 	select DM
 	select DM_GPIO
+	select DM_RESET
+	select DM_SCSI if SCSI
 	select DM_SERIAL
 	select GPIO_EXTRA_HEADER
 	select MSM_SMEM
