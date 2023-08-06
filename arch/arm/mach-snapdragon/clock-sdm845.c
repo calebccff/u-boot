@@ -311,7 +311,9 @@ int msm_enable(struct clk *clk)
 {
 	struct msm_clk_priv *priv = dev_get_priv(clk->dev);
 
-	//dev_info(clk->dev, "clk %s\n", gcc_clk_names[clk->id]);
+	dev_info(clk->dev, "clk %s\n", gcc_clk_names[clk->id]);
+
+	return 0;
 
 	// if (clk->id != GCC_UFS_PHY_AXI_CLK) {
 	// 	printf("Ignoring clk %s\n", gcc_clk_names[clk->id]);
@@ -335,16 +337,16 @@ int msm_enable(struct clk *clk)
 	// These are broken, either don't enable or cause a hang not sure which
 	// we don't need to enable them explicitly anyway...
 	case GCC_UFS_PHY_TX_SYMBOL_0_CLK:
-		//clk_enable_cbc(priv->regmap, GCC_UFS_PHY_TX_SYMBOL_0_CBCR);
+		clk_enable_cbc(priv->regmap, GCC_UFS_PHY_TX_SYMBOL_0_CBCR);
 		break;
 	case GCC_UFS_PHY_RX_SYMBOL_0_CLK:
-		//clk_enable_cbc(priv->regmap, GCC_UFS_PHY_RX_SYMBOL_0_CBCR);
+		clk_enable_cbc(priv->regmap, GCC_UFS_PHY_RX_SYMBOL_0_CBCR);
 		break;
 	case GCC_UFS_PHY_RX_SYMBOL_1_CLK:
-		//clk_enable_cbc(priv->regmap, GCC_UFS_PHY_RX_SYMBOL_1_CBCR);
+		clk_enable_cbc(priv->regmap, GCC_UFS_PHY_RX_SYMBOL_1_CBCR);
 		break;
 	case GCC_UFS_PHY_ICE_CORE_CLK:
-		//clk_enable_cbc(priv->regmap, GCC_UFS_PHY_ICE_CORE_CBCR);
+		clk_enable_cbc(priv->regmap, GCC_UFS_PHY_ICE_CORE_CBCR);
 		break;
 	/* UFS PHY clocks */
 	case GCC_UFS_MEM_CLKREF_CLK:

@@ -44,6 +44,7 @@ static efi_status_t __maybe_unused efi_set_blk_dev_to_system_partition(void)
 	}
 	snprintf(part_str, PART_STR_LEN, "%x:%x",
 		 efi_system_partition.devnum, efi_system_partition.part);
+	printf("EFI System Partition %s\n", part_str);
 	r = fs_set_blk_dev(blk_get_uclass_name(efi_system_partition.uclass_id),
 			   part_str, FS_TYPE_ANY);
 	if (r) {

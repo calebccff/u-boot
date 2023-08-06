@@ -1,0 +1,43 @@
+// SPDX-License-Identifier: GPL-2.0+
+/*
+ * Device Tree file for SDM845 phones with ~1080p displays
+ * and 8GB of RAM.
+ */
+
+/dts-v1/;
+
+#include "sdm845.dtsi"
+
+/ {
+	model = "SDM845 Phone";
+	compatible = "sdm845,phone", "qcom,sdm845";
+
+	aliases {
+		serial0 = &debug_uart;
+	};
+
+	/* XXX: Ideally we would have the DTB go via ABL
+	 * to populate the memory node.
+	 */
+	memory {
+		device_type = "memory";
+		reg = <0 0x80000000 0 0xffffffff
+		       1 0x80000000 0 0xfc7a0000>;
+	};
+};
+
+&debug_uart {
+	status = "okay";
+};
+
+&framebuffer {
+	width = <1080>;
+	/*
+	 * Lowest common denominator, it doesn't matter
+	 * if the bottom few pixels are cropped
+	 */
+	height = <2160>;
+	stride = <(1080 * 4)>;
+};
+
+#include "starqltechn-uboot.dtsi"

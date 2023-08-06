@@ -291,12 +291,12 @@ static bool qcom_geni_serial_poll_bit(const struct udevice *dev, int offset,
 	unsigned int fifo_bits;
 	unsigned long timeout_us = 10000;
 
-	baud = 3000000;
+	baud = 115200;
 
 	if (priv) {
-		// baud = priv->baud;
-		// if (!baud)
-		// 	baud = 115200;
+		baud = priv->baud;
+		if (!baud)
+			baud = 115200;
 		tx_fifo_depth = geni_se_get_tx_fifo_depth(priv->base);
 		tx_fifo_width = geni_se_get_tx_fifo_width(priv->base);
 		fifo_bits = tx_fifo_depth * tx_fifo_width;

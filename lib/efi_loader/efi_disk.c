@@ -5,6 +5,8 @@
  *  Copyright (c) 2016 Alexander Graf
  */
 
+#define DEBUG 1
+
 #define LOG_CATEGORY LOGC_EFI
 
 #include <common.h>
@@ -530,7 +532,7 @@ static efi_status_t efi_disk_add_dev(
 			efi_system_partition.uclass_id = desc->uclass_id;
 			efi_system_partition.devnum = desc->devnum;
 			efi_system_partition.part = part;
-			EFI_PRINT("EFI system partition: %s %x:%x\n",
+			printf("EFI system partition: %s %x:%x\n",
 				  blk_get_uclass_name(desc->uclass_id),
 				  desc->devnum, part);
 		}

@@ -262,7 +262,7 @@ static int ufshcd_send_uic_cmd(struct ufs_hba *hba, struct uic_command *uic_cmd)
 		return -EIO;
 	}
 
-	// printf("sending uic command: %s\n", uic_cmd_names[uic_cmd->command]);
+	//printf("sending uic command: %s\n", uic_cmd_names[uic_cmd->command]);
 
 	/* Write Args */
 	ufshcd_writel(hba, uic_cmd->argument1, REG_UIC_COMMAND_ARG_1);
@@ -447,7 +447,7 @@ static inline void ufshcd_disable_intr_aggr(struct ufs_hba *hba)
  */
 static inline int ufshcd_get_lists_status(u32 reg)
 {
-	// printf("%s: read value=0x%x from reg UFS_MEM_HCS\n", __func__, readl(0x1D84030));
+	//printf("%s: read value=0x%x from reg UFS_MEM_HCS\n", __func__, readl(0x1D84030));
 	return !((reg & UFSHCD_STATUS_READY) == UFSHCD_STATUS_READY);
 }
 
@@ -501,7 +501,7 @@ static int ufshcd_make_hba_operational(struct ufs_hba *hba)
 	int err = 0;
 	u32 reg;
 
-	// printf("%s: Entered function\n", __func__);
+	//printf("%s: Entered function\n", __func__);
 	/* Enable required interrupts */
 	ufshcd_enable_intr(hba, UFSHCD_ENABLE_INTRS);
 
@@ -735,13 +735,14 @@ static void ufshcd_host_memory_configure(struct ufs_hba *hba)
  */
 static int ufshcd_memory_alloc(struct ufs_hba *hba)
 {
+#define UFS_DMA_RAM 0x9ba9c000
 	/* Allocate one Transfer Request Descriptor
 	 * Should be aligned to 1k boundary.
 	 */
 #ifdef CONFIG_SYS_NONCACHED_MEMORY
 	hba->utrdl = (struct utp_transfer_req_desc *)noncached_alloc(sizeof(struct utp_transfer_req_desc), 1024);
 #else
-	hba->utrdl = memalign(1024, sizeof(struct utp_transfer_req_desc));
+	hba->utrdl = (void*)UFS_DMA_RAM; //memalign(1024, sizeof(struct utp_transfer_req_desc));
 #endif
 	if (!hba->utrdl) {
 		dev_err(hba->dev, "Transfer Descriptor memory allocation failed\n");
@@ -754,12 +755,14 @@ static int ufshcd_memory_alloc(struct ufs_hba *hba)
 #ifdef CONFIG_SYS_NONCACHED_MEMORY
 	hba->ucdl = (struct utp_transfer_cmd_desc *)noncached_alloc(sizeof(struct utp_transfer_cmd_desc), 1024);
 #else
-	hba->ucdl = memalign(1024, sizeof(struct utp_transfer_cmd_desc));
+	hba->ucdl = (void*)(UFS_DMA_RAM + 4096);//memalign(1024, sizeof(struct utp_transfer_cmd_desc));
 #endif
 	if (!hba->ucdl) {
 		dev_err(hba->dev, "Command descriptor memory allocation failed\n");
 		return -ENOMEM;
 	}
+
+	//printf("Allocated utrdl = %p, ucdl = %p\n", hba->utrdl, hba->ucdl);
 
 	return 0;
 }
@@ -923,6 +926,8 @@ static int ufshcd_comp_devman_upiu(struct ufs_hba *hba,
 	int ret = 0;
 	struct utp_transfer_req_desc *req_desc = hba->utrdl;
 
+	//printf("%s: Entered function\n", __func__);
+
 	hba->dev_cmd.type = cmd_type;
 
 	ufshcd_prepare_req_desc_hdr(hba, req_desc, &upiu_flags, DMA_NONE);
@@ -948,7 +953,7 @@ static int ufshcd_send_command(struct ufs_hba *hba, unsigned int task_tag)
 	int ret;
 	static bool first = true;
 
-	////printf("%s: Entered function\n", __func__);
+	//printf("%s: Entered function\n", __func__);
 
 	ufshcd_writel(hba, 1 << task_tag, REG_UTP_TRANSFER_REQ_DOOR_BELL);
 	wmb();
@@ -957,7 +962,7 @@ static int ufshcd_send_command(struct ufs_hba *hba, unsigned int task_tag)
 	if (first) {
 		ret = ufshcd_dump_regs(hba, 0, UFSHCI_REG_SPACE_SIZE, "host_regs: ");
 		if (ret < 0)
-			// printf("ufshcd_dump_regs failed: %d\n", ret);
+			//printf("ufshcd_dump_regs failed: %d\n", ret);
 
 		ufshcd_ops_dbg_register_dump(hba);
 		ufshcd_print_tr(hba, task_tag, true);
@@ -1074,17 +1079,17 @@ static int ufshcd_exec_dev_cmd(struct ufs_hba *hba, enum dev_cmd_type cmd_type,
 	icache_disable();
 	dcache_disable();
 
-	// printf("%s: Entered function\n", __func__);
+	//printf("%s: Entered function\n", __func__);
 	err = ufshcd_comp_devman_upiu(hba, cmd_type);
 	if (err)
 		return err;
 
-	// printf("%s: Sending command\n", __func__);
+	//printf("%s: Sending command\n", __func__);
 	err = ufshcd_send_command(hba, TASK_TAG);
 	if (err)
 		return err;
 
-	// printf("%s: get tr ocs\n", __func__);
+	//printf("%s: get tr ocs\n", __func__);
 	err = ufshcd_get_tr_ocs(hba);
 	if (err) {
 		dev_err(hba->dev, "Error in OCS:%d\n", err);
@@ -1094,7 +1099,7 @@ static int ufshcd_exec_dev_cmd(struct ufs_hba *hba, enum dev_cmd_type cmd_type,
 	icache_enable();
 	dcache_enable();
 
-	// printf("%s: get resp\n", __func__);
+	//printf("%s: get resp\n", __func__);
 	resp = ufshcd_get_req_rsp(hba->ucd_rsp_ptr);
 	switch (resp) {
 	case UPIU_TRANSACTION_NOP_IN:
@@ -1116,7 +1121,7 @@ static int ufshcd_exec_dev_cmd(struct ufs_hba *hba, enum dev_cmd_type cmd_type,
 			__func__, resp);
 	}
 
-	// printf("%s: exit\n", __func__);
+	//printf("%s: exit\n", __func__);
 	return err;
 }
 
@@ -1725,7 +1730,7 @@ static void ufs_scsi_dump_cmd(struct ufs_hba *hba, struct scsi_cmd *pccb)
 		}
 	}
 
-	// printf("%s\n", buf);
+	//printf("%s\n", buf);
 }
 
 static int ufs_scsi_exec(struct udevice *scsi_dev, struct scsi_cmd *pccb)

@@ -60,18 +60,13 @@
 	"kernel_comp_size=" KERNEL_COMP_SIZE "\0" \
 	"fdt_addr_r=" FDT_ADDR_R "\0" \
 	"ramdisk_addr_r=" RAMDISK_ADDR_R "\0" \
-	"bootdelay=2\0" \
+	"bootdelay=1\0" \
 	"stdin=serial\0"	\
-	"stdout=serial\0"	\
-	"stderr=serial\0"	\
-	"scsidev=0\0" \
-	"preboot=scsi scan; part number scsi 0 super bootpart; " \
-		"load scsi ${scsidev}:${bootpart} ${kernel_comp_addr_r} /grubaa64.efi; " \
-		"load scsi ${scsidev}:${bootpart} ${fdt_addr_r} /sdm845-shift-axolotl.dtb;\0" \
-	"bootcmd=bootefi $kernel_comp_addr_r $fdt_addr_r\0" \
-	// "preboot=source $prevbl_initrd_start_addr:prebootscript\0"
-	// "bootcmd=source $prevbl_initrd_start_addr:bootscript\0"
-
-/* Size of malloc() pool */
+	"stdout=serial,vidconsole\0"	\
+	"stderr=serial,vidconsole\0"	\
+	"preboot=scsi scan;\0" \
+	"bootcmd=load scsi ${bootdev}:${bootpart} ${kernel_comp_addr_r} /EFI/Boot/bootaa64.efi; " \
+		"load scsi ${bootdev}:${bootpart} ${fdt_addr_r} /${devicetree}; " \
+		"bootefi $kernel_comp_addr_r $fdt_addr_r\0" \
 
 #endif

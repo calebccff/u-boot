@@ -21,16 +21,15 @@ config LNX_KRNL_IMG_TEXT_OFFSET_BASE
 choice
 	prompt "Snapdragon board select"
 
-config TARGET_AXOLOTL
-	bool "SHIFT SHIFT6mq (axolotl)"
+config TARGET_SDM845
+	bool "SDM845 common target"
 	help
-	  Support for the SHIFT SHIFT6mq production phone. Features:
-	  - Qualcomm Snapdragon 845 SoC
-	  - 8GiB RAM
-	  - 128GiB UFS, uSD slot
-	  - WiFi, Bluetooth, GPS, and radio modem.
-	  - SuperSpeed capable type-c port with DisplayPort alt mode
-	  - 1080p 6" touch display
+	  Support for boards based on Qualcomm Snapdragon 845 SoC.
+	  Supported devices and associated DEFAULT_DEVICE_TREE:
+	    * Robotics RB3 Development Platform ("db845c")
+	    * phones with 8GB ram ("sdm845-phone-8gb")
+	    * TODO: phones with 6GB ram ("sdm845-phone-6gb")
+	    * phones with 4GB ram ("sdm845-phone-4gb")
 	select MISC_INIT_R
 	select SDM845
 
@@ -123,6 +122,7 @@ endchoice
 source "board/qualcomm/dragonboard410c/Kconfig"
 source "board/qualcomm/dragonboard820c/Kconfig"
 source "board/qualcomm/dragonboard845c/Kconfig"
+source "board/qualcomm/sdm845/Kconfig"
 source "board/samsung/starqltechn/Kconfig"
 source "board/qualcomm/qcs404-evb/Kconfig"
 source "board/qualcomm/qrb4210-rb2/Kconfig"
