@@ -7,6 +7,7 @@
 
 #include <reset.h>
 #include <linux/bitfield.h>
+#include "ufs.h"
 
 #define MAX_UFS_QCOM_HOSTS	1
 #define MAX_U32                 (~(u32)0)

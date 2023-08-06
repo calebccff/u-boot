@@ -230,6 +230,22 @@ static inline bool ufshcd_is_device_present(struct ufs_hba *hba)
 						DEVICE_PRESENT) ? true : false;
 }
 
+static const char * const uic_cmd_names[] = {
+	[0x01] = "UIC_CMD_DME_GET",
+	[0x02] = "UIC_CMD_DME_SET",
+	[0x03] = "UIC_CMD_DME_PEER_GET",
+	[0x04] = "UIC_CMD_DME_PEER_SET",
+	[0x10] = "UIC_CMD_DME_POWERON",
+	[0x11] = "UIC_CMD_DME_POWEROFF",
+	[0x12] = "UIC_CMD_DME_ENABLE",
+	[0x14] = "UIC_CMD_DME_RESET",
+	[0x15] = "UIC_CMD_DME_END_PT_RST",
+	[0x16] = "UIC_CMD_DME_LINK_STARTUP",
+	[0x17] = "UIC_CMD_DME_HIBER_ENTER",
+	[0x18] = "UIC_CMD_DME_HIBER_EXIT",
+	[0x1A] = "UIC_CMD_DME_TEST_MODE",
+};
+
 /**
  * ufshcd_send_uic_cmd - UFS Interconnect layer command API
  *
@@ -246,7 +262,7 @@ static int ufshcd_send_uic_cmd(struct ufs_hba *hba, struct uic_command *uic_cmd)
 		return -EIO;
 	}
 
-	printf("sending uic command:%d\n", uic_cmd->command);
+	//printf("sending uic command: %s\n", uic_cmd_names[uic_cmd->command]);
 
 	/* Write Args */
 	ufshcd_writel(hba, uic_cmd->argument1, REG_UIC_COMMAND_ARG_1);
@@ -281,7 +297,7 @@ static int ufshcd_send_uic_cmd(struct ufs_hba *hba, struct uic_command *uic_cmd)
 	uic_cmd->argument2 = ufshcd_get_uic_cmd_result(hba);
 	uic_cmd->argument3 = ufshcd_get_dme_attr_val(hba);
 
-	printf("Sent successfully\n");
+	//printf("Sent successfully\n");
 
 	return 0;
 }
@@ -431,7 +447,7 @@ static inline void ufshcd_disable_intr_aggr(struct ufs_hba *hba)
  */
 static inline int ufshcd_get_lists_status(u32 reg)
 {
-	printf("%s: read value=0x%x from reg UFS_MEM_HCS\n", __func__, readl(0x1D84030));
+	//printf("%s: read value=0x%x from reg UFS_MEM_HCS\n", __func__, readl(0x1D84030));
 	return !((reg & UFSHCD_STATUS_READY) == UFSHCD_STATUS_READY);
 }
 
@@ -442,7 +458,7 @@ static inline int ufshcd_get_lists_status(u32 reg)
  */
 static void ufshcd_enable_run_stop_reg(struct ufs_hba *hba)
 {
-	printf("%s: Entered function\n", __func__);
+	//printf("%s: Entered function\n", __func__);
 	ufshcd_writel(hba, UTP_TASK_REQ_LIST_RUN_STOP_BIT,
 		      REG_UTP_TASK_REQ_LIST_RUN_STOP);
 	ufshcd_writel(hba, UTP_TRANSFER_REQ_LIST_RUN_STOP_BIT,
@@ -457,7 +473,7 @@ static void ufshcd_enable_intr(struct ufs_hba *hba, u32 intrs)
 	u32 set = ufshcd_readl(hba, REG_INTERRUPT_ENABLE);
 	u32 rw;
 
-	printf("%s: Entered function\n", __func__);
+	//printf("%s: Entered function\n", __func__);
 	if (hba->version == UFSHCI_VERSION_10) {
 		rw = set & INTERRUPT_MASK_RW_VER_10;
 		set = rw | ((set ^ intrs) & intrs);
@@ -485,7 +501,7 @@ static int ufshcd_make_hba_operational(struct ufs_hba *hba)
 	int err = 0;
 	u32 reg;
 
-	printf("%s: Entered function\n", __func__);
+	//printf("%s: Entered function\n", __func__);
 	/* Enable required interrupts */
 	ufshcd_enable_intr(hba, UFSHCD_ENABLE_INTRS);
 
@@ -719,13 +735,14 @@ static void ufshcd_host_memory_configure(struct ufs_hba *hba)
  */
 static int ufshcd_memory_alloc(struct ufs_hba *hba)
 {
+#define UFS_DMA_RAM 0x9ba9c000
 	/* Allocate one Transfer Request Descriptor
 	 * Should be aligned to 1k boundary.
 	 */
 #ifdef CONFIG_SYS_NONCACHED_MEMORY
 	hba->utrdl = (struct utp_transfer_req_desc *)noncached_alloc(sizeof(struct utp_transfer_req_desc), 1024);
 #else
-	hba->utrdl = memalign(1024, sizeof(struct utp_transfer_req_desc));
+	hba->utrdl = (void*)UFS_DMA_RAM; //memalign(1024, sizeof(struct utp_transfer_req_desc));
 #endif
 	if (!hba->utrdl) {
 		dev_err(hba->dev, "Transfer Descriptor memory allocation failed\n");
@@ -738,12 +755,14 @@ static int ufshcd_memory_alloc(struct ufs_hba *hba)
 #ifdef CONFIG_SYS_NONCACHED_MEMORY
 	hba->ucdl = (struct utp_transfer_cmd_desc *)noncached_alloc(sizeof(struct utp_transfer_cmd_desc), 1024);
 #else
-	hba->ucdl = memalign(1024, sizeof(struct utp_transfer_cmd_desc));
+	hba->ucdl = (void*)(UFS_DMA_RAM + 4096);//memalign(1024, sizeof(struct utp_transfer_cmd_desc));
 #endif
 	if (!hba->ucdl) {
 		dev_err(hba->dev, "Command descriptor memory allocation failed\n");
 		return -ENOMEM;
 	}
+
+	//printf("Allocated utrdl = %p, ucdl = %p\n", hba->utrdl, hba->ucdl);
 
 	return 0;
 }
@@ -907,6 +926,8 @@ static int ufshcd_comp_devman_upiu(struct ufs_hba *hba,
 	int ret = 0;
 	struct utp_transfer_req_desc *req_desc = hba->utrdl;
 
+	//printf("%s: Entered function\n", __func__);
+
 	hba->dev_cmd.type = cmd_type;
 
 	ufshcd_prepare_req_desc_hdr(hba, req_desc, &upiu_flags, DMA_NONE);
@@ -932,7 +953,7 @@ static int ufshcd_send_command(struct ufs_hba *hba, unsigned int task_tag)
 	int ret;
 	static bool first = true;
 
-	printf("%s: Entered function\n", __func__);
+	//printf("%s: Entered function\n", __func__);
 
 	ufshcd_writel(hba, 1 << task_tag, REG_UTP_TRANSFER_REQ_DOOR_BELL);
 	wmb();
@@ -941,7 +962,7 @@ static int ufshcd_send_command(struct ufs_hba *hba, unsigned int task_tag)
 	if (first) {
 		ret = ufshcd_dump_regs(hba, 0, UFSHCI_REG_SPACE_SIZE, "host_regs: ");
 		if (ret < 0)
-			printf("ufshcd_dump_regs failed: %d\n", ret);
+			//printf("ufshcd_dump_regs failed: %d\n", ret);
 
 		ufshcd_ops_dbg_register_dump(hba);
 		ufshcd_print_tr(hba, task_tag, true);
@@ -951,11 +972,12 @@ static int ufshcd_send_command(struct ufs_hba *hba, unsigned int task_tag)
 
 	mb();
 
-	printf("%s: Writing to REG_UTP_TRANSFER_REQ_DOOR_BELL ok\n", __func__);
+	//printf("%s: Writing to REG_UTP_TRANSFER_REQ_DOOR_BELL ok\n", __func__);
 	start = get_timer(0);
 	do {
-		printf("%s: Reading from INTR STATUS reg\n", __func__);
+		//printf("%s: Reading from INTR STATUS reg\n", __func__);
 		intr_status = ufshcd_readl(hba, REG_INTERRUPT_STATUS);
+		//printf("%s: INTR STATUS reg: 0x%08x\n", __func__, intr_status);
 		enabled_intr_status = intr_status & hba->intr_mask;
 		ufshcd_writel(hba, intr_status, REG_INTERRUPT_STATUS);
 
@@ -1062,12 +1084,12 @@ static int ufshcd_exec_dev_cmd(struct ufs_hba *hba, enum dev_cmd_type cmd_type,
 	if (err)
 		return err;
 
-	printf("%s: Sending command\n", __func__);
+	//printf("%s: Sending command\n", __func__);
 	err = ufshcd_send_command(hba, TASK_TAG);
 	if (err)
 		return err;
 
-	printf("%s: get tr ocs\n", __func__);
+	//printf("%s: get tr ocs\n", __func__);
 	err = ufshcd_get_tr_ocs(hba);
 	if (err) {
 		dev_err(hba->dev, "Error in OCS:%d\n", err);
@@ -1099,7 +1121,7 @@ static int ufshcd_exec_dev_cmd(struct ufs_hba *hba, enum dev_cmd_type cmd_type,
 			__func__, resp);
 	}
 
-	printf("%s: Exiting successfully\n", __func__);
+	//printf("%s: exit\n", __func__);
 	return err;
 }
 
@@ -1590,6 +1612,127 @@ static void prepare_prdt_table(struct ufs_hba *hba, struct scsi_cmd *pccb)
 	req_desc->prd_table_length = table_length;
 }
 
+const char * const scsi_sense_name[] = {
+	/* SENSE request */
+	[SENSE_NO_SENSE] = "SENSE_NO_SENSE",
+	[SENSE_RECOVERED_ERROR] = "SENSE_RECOVERED_ERROR",
+	[SENSE_NOT_READY] = "SENSE_NOT_READY",
+	[SENSE_MEDIUM_ERROR] = "SENSE_MEDIUM_ERROR",
+	[SENSE_HARDWARE_ERROR] = "SENSE_HARDWARE_ERROR",
+	[SENSE_ILLEGAL_REQUEST] = "SENSE_ILLEGAL_REQUEST",
+	[SENSE_UNIT_ATTENTION] = "SENSE_UNIT_ATTENTION",
+	[SENSE_DATA_PROTECT] = "SENSE_DATA_PROTECT",
+	[SENSE_BLANK_CHECK] = "SENSE_BLANK_CHECK",
+	[SENSE_VENDOR_SPECIFIC] = "SENSE_VENDOR_SPECIFIC",
+	[SENSE_COPY_ABORTED] = "SENSE_COPY_ABORTED",
+	[SENSE_ABORTED_COMMAND] = "SENSE_ABORTED_COMMAND",
+	[SENSE_VOLUME_OVERFLOW] = "SENSE_VOLUME_OVERFLOW",
+	[SENSE_MISCOMPARE] = "SENSE_MISCOMPARE",
+};
+
+const char * const scsi_cmd_name[] = {
+	[SCSI_CHANGE_DEF] = "SCSI_CHANGE_DEF",		/* Change Definition (Optional) */
+	[SCSI_COMPARE] = "SCSI_COMPARE",		/* Compare (O) */
+	[SCSI_COPY] = "SCSI_COPY",		/* Copy (O) */
+	[SCSI_COP_VERIFY] = "SCSI_COP_VERIFY",		/* Copy and Verify (O) */
+	[SCSI_INQUIRY] = "SCSI_INQUIRY",		/* Inquiry (MANDATORY) */
+	[SCSI_LOG_SELECT] = "SCSI_LOG_SELECT",		/* Log Select (O) */
+	[SCSI_LOG_SENSE] = "SCSI_LOG_SENSE",		/* Log Sense (O) */
+	[SCSI_MODE_SEL6] = "SCSI_MODE_SEL6",		/* Mode Select 6-byte (Device Specific) */
+	[SCSI_MODE_SEL10] = "SCSI_MODE_SEL10",		/* Mode Select 10-byte (Device Specific) */
+	[SCSI_MODE_SEN6] = "SCSI_MODE_SEN6",		/* Mode Sense 6-byte (Device Specific) */
+	[SCSI_MODE_SEN10] = "SCSI_MODE_SEN10",		/* Mode Sense 10-byte (Device Specific) */
+	[SCSI_READ_BUFF] = "SCSI_READ_BUFF",		/* Read Buffer (O) */
+	[SCSI_REQ_SENSE] = "SCSI_REQ_SENSE",		/* Request Sense (MANDATORY) */
+	[SCSI_SEND_DIAG] = "SCSI_SEND_DIAG",		/* Send Diagnostic (O) */
+	[SCSI_TST_U_RDY] = "SCSI_TST_U_RDY",		/* Test Unit Ready (MANDATORY) */
+	[SCSI_WRITE_BUFF] = "SCSI_WRITE_BUFF",		/* Write Buffer (O) */
+/***************************************************************************
+ *			  %%% Commands Unique to Direct Access Devices %%%
+ ***************************************************************************/
+	[SCSI_FORMAT] = "SCSI_FORMAT",		/* Format Unit (MANDATORY) */
+	[SCSI_LCK_UN_CAC] = "SCSI_LCK_UN_CAC",		/* Lock Unlock Cache (O) */
+	[SCSI_PREFETCH] = "SCSI_PREFETCH",		/* Prefetch (O) */
+	[SCSI_MED_REMOVL] = "SCSI_MED_REMOVL",		/* Prevent/Allow medium Removal (O) */
+	[SCSI_READ6] = "SCSI_READ6",		/* Read 6-byte (MANDATORY) */
+	[SCSI_READ10] = "SCSI_READ10",		/* Read 10-byte (MANDATORY) */
+	[SCSI_READ16] = "SCSI_READ16",
+	[SCSI_RD_CAPAC] = "SCSI_RD_CAPAC",		/* Read Capacity (MANDATORY) */
+	[SCSI_RD_CAPAC16] = "SCSI_RD_CAPAC16",		/* Read Capacity (16) */
+	[SCSI_RD_DEFECT] = "SCSI_RD_DEFECT",		/* Read Defect Data (O) */
+	[SCSI_READ_LONG] = "SCSI_READ_LONG",		/* Read Long (O) */
+	[SCSI_REASS_BLK] = "SCSI_REASS_BLK",		/* Reassign Blocks (O) */
+	[SCSI_RCV_DIAG] = "SCSI_RCV_DIAG",		/* Receive Diagnostic Results (O) */
+	[SCSI_RELEASE] = "SCSI_RELEASE",		/* Release Unit (MANDATORY) */
+	[SCSI_REZERO] = "SCSI_REZERO",		/* Rezero Unit (O) */
+	[SCSI_SRCH_DAT_E] = "SCSI_SRCH_DAT_E",		/* Search Data Equal (O) */
+	[SCSI_SRCH_DAT_H] = "SCSI_SRCH_DAT_H",		/* Search Data High (O) */
+	[SCSI_SRCH_DAT_L] = "SCSI_SRCH_DAT_L",		/* Search Data Low (O) */
+	[SCSI_SEEK6] = "SCSI_SEEK6",		/* Seek 6-Byte (O) */
+	[SCSI_SEEK10] = "SCSI_SEEK10",		/* Seek 10-Byte (O) */
+	[SCSI_SET_LIMIT] = "SCSI_SET_LIMIT",		/* Set Limits (O) */
+	[SCSI_START_STP] = "SCSI_START_STP",		/* Start/Stop Unit (O) */
+	[SCSI_SYNC_CACHE] = "SCSI_SYNC_CACHE",		/* Synchronize Cache (O) */
+	[SCSI_VERIFY] = "SCSI_VERIFY",		/* Verify (O) */
+	[SCSI_WRITE6] = "SCSI_WRITE6",		/* Write 6-Byte (MANDATORY) */
+	[SCSI_WRITE10] = "SCSI_WRITE10",		/* Write 10-Byte (MANDATORY) */
+	[SCSI_WRT_VERIFY] = "SCSI_WRT_VERIFY",		/* Write and Verify (O) */
+	[SCSI_WRITE_LONG] = "SCSI_WRITE_LONG",		/* Write Long (O) */
+	[SCSI_WRITE_SAME] = "SCSI_WRITE_SAME",		/* Write Same (O) */
+};
+
+const char * const scsi_message_name[] = {
+	[M_COMPLETE] = "M_COMPLETE",
+	[M_EXTENDED] = "M_EXTENDED",
+	[M_SAVE_DP] = "M_SAVE_DP",
+	[M_RESTORE_DP] = "M_RESTORE_DP",
+	[M_DISCONNECT] = "M_DISCONNECT",
+	[M_ID_ERROR] = "M_ID_ERROR",
+	[M_ABORT] = "M_ABORT",
+	[M_REJECT] = "M_REJECT",
+	[M_NOOP] = "M_NOOP",
+	[M_PARITY] = "M_PARITY",
+	[M_LCOMPLETE] = "M_LCOMPLETE",
+	[M_FCOMPLETE] = "M_FCOMPLETE",
+	[M_RESET] = "M_RESET",
+	[M_ABORT_TAG] = "M_ABORT_TAG",
+	[M_CLEAR_QUEUE] = "M_CLEAR_QUEUE",
+	[M_INIT_REC] = "M_INIT_REC",
+	[M_REL_REC] = "M_REL_REC",
+	[M_TERMINATE] = "M_TERMINATE",
+	[M_SIMPLE_TAG] = "M_SIMPLE_TAG",
+	[M_HEAD_TAG] = "M_HEAD_TAG",
+	[M_ORDERED_TAG] = "M_ORDERED_TAG",
+	[M_IGN_RESIDUE] = "M_IGN_RESIDUE",
+	[M_IDENTIFY] = "M_IDENTIFY",
+	[SCSI_IDENTIFY] = "SCSI_IDENTIFY",
+};
+
+static void ufs_scsi_dump_cmd(struct ufs_hba *hba, struct scsi_cmd *pccb)
+{
+	static char buf[256];
+#define str (buf + strlen(buf))
+
+	memset(buf, 0, sizeof(buf));
+
+	snprintf(str, sizeof(buf), "%02d:%03d: tx_bytes: 0x%02lx, dma_dir: %d ", pccb->target, pccb->lun,
+		pccb->trans_bytes, pccb->dma_dir);
+
+	if (pccb->msgout[0])
+		snprintf(str, sizeof(buf), "(msgout %s) ", scsi_message_name[pccb->msgout[0]]);
+
+	if (pccb->cmd[0]) {
+		snprintf(str, sizeof(buf), "%16s ", scsi_cmd_name[pccb->cmd[0]]);
+		for (int i = 0; i < pccb->cmdlen; i++) {
+			if (i > 0 && i % 2 == 0)
+				snprintf(str, sizeof(buf), " ");
+			snprintf(str, sizeof(buf), "%02X", pccb->cmd[i]);
+		}
+	}
+
+	printf("%s\n", buf);
+}
+
 static int ufs_scsi_exec(struct udevice *scsi_dev, struct scsi_cmd *pccb)
 {
 	struct ufs_hba *hba = dev_get_uclass_priv(scsi_dev->parent);
@@ -1637,6 +1780,8 @@ static int ufs_scsi_exec(struct udevice *scsi_dev, struct scsi_cmd *pccb)
 		break;
 	default:
 		dev_err(hba->dev, "OCS error from controller = %x\n", ocs);
+		dev_info(hba->dev, "failed command: \n");
+		ufs_scsi_dump_cmd(hba, pccb);
 		return -EINVAL;
 	}
 
@@ -1902,7 +2047,7 @@ static int ufshcd_verify_dev_init(struct ufs_hba *hba)
 	int retries;
 	int err;
 
-	printf("%s: Entered function\n", __func__);
+	//printf("%s: Entered function\n", __func__);
 	for (retries = NOP_OUT_RETRIES; retries > 0; retries--) {
 		err = ufshcd_exec_dev_cmd(hba, DEV_CMD_TYPE_NOP,
 					  NOP_OUT_TIMEOUT);
@@ -1927,7 +2072,7 @@ static int ufshcd_complete_dev_init(struct ufs_hba *hba)
 	int err;
 	bool flag_res = 1;
 
-	printf("%s: Entered function\n", __func__);
+	//printf("%s: Entered function\n", __func__);
 	err = ufshcd_query_flag_retry(hba, UPIU_QUERY_OPCODE_SET_FLAG,
 				      QUERY_FLAG_IDN_FDEVICEINIT, NULL);
 	if (err) {
@@ -2008,7 +2153,7 @@ int ufs_start(struct ufs_hba *hba)
 			return ret;
 		}
 
-		printf("Device at %s up at:", hba->dev->name);
+		//printf("Device at %s up at:", hba->dev->name);
 		ufshcd_print_pwr_info(hba);
 	}
 
@@ -2035,12 +2180,16 @@ int ufshcd_probe(struct udevice *ufs_dev, struct ufs_hba_ops *hba_ops)
 	hba->ops = hba_ops;
 	hba->mmio_base = dev_read_addr_ptr(ufs_dev);
 
-	printf("%s: hba->mmio_base = 0x%p\n", __func__,hba->mmio_base);
+	//printf("%s: hba->mmio_base = 0x%p\n", __func__,hba->mmio_base);
 
 	/* Set descriptor lengths to specification defaults */
 	ufshcd_def_desc_sizes(hba);
 
-	ufshcd_ops_init(hba);
+	err = ufshcd_ops_init(hba);
+	if (err) {
+		dev_err(hba->dev, "UFS platform init failed\n");
+		return err;
+	}
 
 	/* Read capabilties registers */
 	hba->capabilities = ufshcd_readl(hba, REG_CONTROLLER_CAPABILITIES);
