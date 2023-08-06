@@ -914,13 +914,7 @@ static int qmp_ufs_probe(struct udevice *dev)
 
 	qmp->dev = dev;
 
-	/* Check for legacy binding with child node. */
-	if (ofnode_device_is_compatible(dp, "qcom,sm8250-qmp-ufs-phy")) {
-		ret = qmp_ufs_probe_dt_children(dev);
-	} else {
-		return -ENOTSUPP;
-	}
-
+	ret = qmp_ufs_probe_dt_children(dev);
 	if (ret) {
 		printf("%s: failed to get UFS dt regs\n", __func__);
 		return ret;
