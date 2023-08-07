@@ -502,7 +502,7 @@ struct qmp_ufs_priv {
 };
 
 /* Enable DEBUG_QMP to trace qmp reg read/write */
-#define DEBUG_QMP
+//#define DEBUG_QMP
 
 #ifdef DEBUG_QMP
 #define debug_qmp printf
