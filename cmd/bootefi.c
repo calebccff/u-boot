@@ -207,13 +207,19 @@ static efi_status_t copy_fdt(void **fdtp)
 	/*
 	 * Safe fdt location is at 127 MiB.
 	 * On the sandbox convert from the sandbox address space.
+	 *
+	 * HACK: this coincides with some protected memory on the OnePlus 6
+	 * and potentially other platforms, even attempting to touch it will
+	 * immediately crash the device!
 	 */
-	new_fdt_addr = (uintptr_t)map_sysmem(fdt_ram_start + 0x7f00000 +
-					     fdt_size, 0);
-	ret = efi_allocate_pages(EFI_ALLOCATE_MAX_ADDRESS,
-				 EFI_ACPI_RECLAIM_MEMORY, fdt_pages,
-				 &new_fdt_addr);
-	if (ret != EFI_SUCCESS) {
+	// new_fdt_addr = (uintptr_t)map_sysmem(fdt_ram_start + 0x7f00000 +
+	// 				     fdt_size, 0);
+	// printf("Trying to copy FDT from 0x%lx to 0x%llx\n", (ulong)fdt,
+	//        (unsigned long long)new_fdt_addr);
+	// ret = efi_allocate_pages(EFI_ALLOCATE_MAX_ADDRESS,
+	// 			 EFI_ACPI_RECLAIM_MEMORY, fdt_pages,
+	// 			 &new_fdt_addr);
+	if (true || ret != EFI_SUCCESS) {
 		/* If we can't put it there, put it somewhere */
 		new_fdt_addr = (ulong)memalign(EFI_PAGE_SIZE, fdt_size);
 		ret = efi_allocate_pages(EFI_ALLOCATE_MAX_ADDRESS,
