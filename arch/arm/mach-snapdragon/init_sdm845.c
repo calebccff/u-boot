@@ -84,14 +84,14 @@ static const struct board_info sdm845_boards[] = {
 		.bootdev = 0,
 		.bootpart = 7, // super
 	}, {
-		.display_match = "dsi_samsung_sofef00_m_cmd_display", // XXX: CHECK
+		.display_match = "dsi_samsung_sofef00_m_cmd_display",
 		.pretty_name = "OnePlus 6",
 		.codename = "enchilada",
 		.devicetree = "/dtbs/qcom/sdm845-oneplus-enchilada.dtb",
 		.width = 1080,
 		.height = 2280,
-		.bootdev = 4,
-		.bootpart = 4, // XXX: CHECK
+		.bootdev = 0,
+		.bootpart = 7, // XXX: op2
 	}
 };
 
