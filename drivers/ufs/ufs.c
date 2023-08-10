@@ -831,11 +831,11 @@ static void ufshcd_prepare_req_desc_hdr(struct ufs_hba *hba, struct utp_transfer
 
 	req_desc->prd_table_length = 0;
 
-#ifndef CONFIG_SYS_NONCACHED_MEMORY
-	flush_dcache_range((unsigned long)req_desc, (unsigned long)(req_desc + ROUND(sizeof(struct utp_transfer_req_desc), CONFIG_SYS_CACHELINE_SIZE)));
-	flush_dcache_range((unsigned long)hba->utrdl, (unsigned long)(hba->utrdl + ROUND(sizeof(struct utp_transfer_req_desc), CONFIG_SYS_CACHELINE_SIZE)));
-	flush_dcache_range((unsigned long)hba->ucdl, (unsigned long)(hba->ucdl + ROUND(sizeof(struct utp_transfer_cmd_desc), CONFIG_SYS_CACHELINE_SIZE)));
-#endif
+// #ifndef CONFIG_SYS_NONCACHED_MEMORY
+// 	flush_dcache_range((unsigned long)req_desc, (unsigned long)(req_desc + ROUND(sizeof(struct utp_transfer_req_desc), CONFIG_SYS_CACHELINE_SIZE)));
+// 	flush_dcache_range((unsigned long)hba->utrdl, (unsigned long)(hba->utrdl + ROUND(sizeof(struct utp_transfer_req_desc), CONFIG_SYS_CACHELINE_SIZE)));
+// 	flush_dcache_range((unsigned long)hba->ucdl, (unsigned long)(hba->ucdl + ROUND(sizeof(struct utp_transfer_cmd_desc), CONFIG_SYS_CACHELINE_SIZE)));
+// #endif
 	mb();
 }
 
@@ -886,11 +886,11 @@ static inline void ufshcd_prepare_utp_nop_upiu(struct ufs_hba *hba)
 	ucd_req_ptr->header.dword_1 = 0;
 	ucd_req_ptr->header.dword_2 = 0;
 
-#ifndef CONFIG_SYS_NONCACHED_MEMORY
-	flush_dcache_range((unsigned long)ucd_req_ptr, (unsigned long)(ucd_req_ptr + ROUND(sizeof(struct utp_upiu_req), CONFIG_SYS_CACHELINE_SIZE)));
-	flush_dcache_range((unsigned long)hba->utrdl, (unsigned long)(hba->utrdl + ROUND(sizeof(struct utp_transfer_req_desc), CONFIG_SYS_CACHELINE_SIZE)));
-	flush_dcache_range((unsigned long)hba->ucdl, (unsigned long)(hba->ucdl + ROUND(sizeof(struct utp_transfer_cmd_desc), CONFIG_SYS_CACHELINE_SIZE)));
-#endif
+// #ifndef CONFIG_SYS_NONCACHED_MEMORY
+// 	flush_dcache_range((unsigned long)ucd_req_ptr, (unsigned long)(ucd_req_ptr + ROUND(sizeof(struct utp_upiu_req), CONFIG_SYS_CACHELINE_SIZE)));
+// 	flush_dcache_range((unsigned long)hba->utrdl, (unsigned long)(hba->utrdl + ROUND(sizeof(struct utp_transfer_req_desc), CONFIG_SYS_CACHELINE_SIZE)));
+// 	flush_dcache_range((unsigned long)hba->ucdl, (unsigned long)(hba->ucdl + ROUND(sizeof(struct utp_transfer_cmd_desc), CONFIG_SYS_CACHELINE_SIZE)));
+// #endif
 	mb();
 
 	memset(hba->ucd_rsp_ptr, 0, sizeof(struct utp_upiu_rsp));
@@ -932,6 +932,8 @@ static int ufshcd_send_command(struct ufs_hba *hba, unsigned int task_tag)
 	int ret;
 	static bool first = true;
 
+	flush_dcache_all();
+
 	printf("%s: Entered function\n", __func__);
 
 	ufshcd_writel(hba, 1 << task_tag, REG_UTP_TRANSFER_REQ_DOOR_BELL);
@@ -939,14 +941,14 @@ static int ufshcd_send_command(struct ufs_hba *hba, unsigned int task_tag)
 
 	//Dump regs
 	if (first) {
-		ret = ufshcd_dump_regs(hba, 0, UFSHCI_REG_SPACE_SIZE, "host_regs: ");
-		if (ret < 0)
-			printf("ufshcd_dump_regs failed: %d\n", ret);
+		// ret = ufshcd_dump_regs(hba, 0, UFSHCI_REG_SPACE_SIZE, "host_regs: ");
+		// if (ret < 0)
+		// 	printf("ufshcd_dump_regs failed: %d\n", ret);
 
-		ufshcd_ops_dbg_register_dump(hba);
-		ufshcd_print_tr(hba, task_tag, true);
+		// ufshcd_ops_dbg_register_dump(hba);
+		// ufshcd_print_tr(hba, task_tag, true);
 
-		first = false;
+		// first = false;
 	}
 
 	mb();
@@ -954,7 +956,7 @@ static int ufshcd_send_command(struct ufs_hba *hba, unsigned int task_tag)
 	printf("%s: Writing to REG_UTP_TRANSFER_REQ_DOOR_BELL ok\n", __func__);
 	start = get_timer(0);
 	do {
-		printf("%s: Reading from INTR STATUS reg\n", __func__);
+		//printf("%s: Reading from INTR STATUS reg\n", __func__);
 		intr_status = ufshcd_readl(hba, REG_INTERRUPT_STATUS);
 		enabled_intr_status = intr_status & hba->intr_mask;
 		ufshcd_writel(hba, intr_status, REG_INTERRUPT_STATUS);
@@ -966,7 +968,7 @@ static int ufshcd_send_command(struct ufs_hba *hba, unsigned int task_tag)
 			return -ETIMEDOUT;
 		}
 
-		if (enabled_intr_status & UFSHCD_ERROR_MASK) {
+		if (enabled_intr_status & UFSHCD_ERROR_MASK && !(enabled_intr_status & UIC_ERROR)) {
 			dev_err(hba->dev, "Error in status:%08x\n",
 				enabled_intr_status);
 
@@ -1592,11 +1594,15 @@ static int ufs_scsi_exec(struct udevice *scsi_dev, struct scsi_cmd *pccb)
 	int ocs, result = 0;
 	u8 scsi_status;
 
+	dcache_disable();
+
 	ufshcd_prepare_req_desc_hdr(hba, req_desc, &upiu_flags, pccb->dma_dir);
 	ufshcd_prepare_utp_scsi_cmd_upiu(hba, pccb, upiu_flags);
 	prepare_prdt_table(hba, pccb);
 
 	ufshcd_send_command(hba, TASK_TAG);
+
+	dcache_enable();
 
 	ocs = ufshcd_get_tr_ocs(hba);
 	switch (ocs) {

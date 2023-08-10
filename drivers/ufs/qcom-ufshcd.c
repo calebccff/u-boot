@@ -771,7 +771,7 @@ static int ufs_qcom_link_startup_notify(struct ufs_hba *hba,
 			return -EINVAL;
 		}
 
-		if (ufs_qcom_cap_qunipro(priv))
+		//if (ufs_qcom_cap_qunipro(priv))
 			/*
 			 * set unipro core clock cycles to 150 & clear clock
 			 * divider

@@ -87,7 +87,7 @@ int board_init(void)
 {
 	show_psci_version();
 
-	set_smmu_bypass_mode();
+	//set_smmu_bypass_mode();
 #if 0
 	icache_disable();
 	dcache_disable();

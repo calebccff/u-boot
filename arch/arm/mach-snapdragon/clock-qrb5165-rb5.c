@@ -109,6 +109,10 @@ ulong msm_set_rate(struct clk *clk, ulong rate)
 {
 	struct msm_clk_priv *priv = dev_get_priv(clk->dev);
 
+	printf("%s: %s: %lu\n", __func__, clk->dev->name, rate);
+	if (clk->id != GCC_QUPV3_WRAP1_S4_CLK)
+		return 0;
+
 	switch (clk->id) {
 		case GCC_UFS_PHY_AXI_CLK:
 			writel(0x00282001, 0x177004); // GCC_UFS_PHY_GDSCR
@@ -305,7 +309,7 @@ void msm_rpmh_rsc_writes(void)
 
 int msm_enable(struct clk *clk)
 {
-	msm_rpmh_rsc_writes();
+	//msm_rpmh_rsc_writes();
 
 	return 0;
 }
