@@ -6,4 +6,4 @@
 # Board logic defined in arch/arm/mach-snapdragon/init_sdm845.c, no custom logic for dragonboard845c so far.
 #
 
-obj-y += dragonboard845c.o
+obj-y += sdm845.o
