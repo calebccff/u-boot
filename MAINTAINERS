@@ -1585,7 +1585,7 @@ T:	git https://source.denx.de/u-boot/custodians/u-boot-ubi.git
 F:	drivers/mtd/ubi/
 
 UFS
-M:	Faiz Abbas <faiz_abbas@ti.com>
+M:	Bhupesh Sharma <bhupesh.sharma@linaro.org>
 S:	Maintained
 F:	drivers/ufs/
 
