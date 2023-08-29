@@ -11,7 +11,7 @@
 
 #include <linux/sizes.h>
 
-#define CFG_SYS_BAUDRATE_TABLE	{ 115200, 230400, 460800, 921600 }
+#define CFG_SYS_BAUDRATE_TABLE	{ 115200, 230400, 460800, 921600, 3000000 }
 
 #ifndef SDRAM_OFFSET
 #define SDRAM_OFFSET(x)		0x8##x
