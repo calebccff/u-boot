@@ -383,6 +383,7 @@ int sdhci_set_clock(struct mmc *mmc, unsigned int clock)
 		udelay(100);
 	}
 
+	printf("%s: Writing 0 on SDHCI_CLOCK_CONTROL\n", __func__);
 	sdhci_writew(host, 0, SDHCI_CLOCK_CONTROL);
 
 	if (clock == 0)
@@ -405,6 +406,7 @@ int sdhci_set_clock(struct mmc *mmc, unsigned int clock)
 	}
 
 	if (SDHCI_GET_VERSION(host) >= SDHCI_SPEC_300) {
+		printf("%s: SDHCI_GET_VERSION(host) >= SDHCI_SPEC_300\n", __func__);
 		/*
 		 * Check if the Host Controller supports Programmable Clock
 		 * Mode.
@@ -436,6 +438,7 @@ int sdhci_set_clock(struct mmc *mmc, unsigned int clock)
 			div >>= 1;
 		}
 	} else {
+		printf("%s: SDHCI_GET_VERSION(host) < SDHCI_SPEC_300\n", __func__);
 		/* Version 2.00 divisors must be a power of 2. */
 		for (div = 1; div < SDHCI_MAX_DIV_SPEC_200; div *= 2) {
 			if ((host->max_clk / div) <= clock)
@@ -459,6 +462,7 @@ int sdhci_set_clock(struct mmc *mmc, unsigned int clock)
 	clk |= ((div & SDHCI_DIV_HI_MASK) >> SDHCI_DIV_MASK_LEN)
 		<< SDHCI_DIVIDER_HI_SHIFT;
 	clk |= SDHCI_CLOCK_INT_EN;
+	printf("%s: Writing 0x%x on SDHCI_CLOCK_CONTROL\n", __func__, clk);
 	sdhci_writew(host, clk, SDHCI_CLOCK_CONTROL);
 
 	/* Wait max 20 ms */
@@ -475,6 +479,7 @@ int sdhci_set_clock(struct mmc *mmc, unsigned int clock)
 	}
 
 	clk |= SDHCI_CLOCK_CARD_EN;
+	printf("%s: Writing 0x%x at SDHCI_CLOCK_CONTROL\n", __func__, clk);
 	sdhci_writew(host, clk, SDHCI_CLOCK_CONTROL);
 	return 0;
 }
@@ -486,6 +491,13 @@ static void sdhci_set_power(struct sdhci_host *host, unsigned short power)
 	if (power != (unsigned short)-1) {
 		switch (1 << power) {
 		case MMC_VDD_165_195:
+		/*
+		 * Without a regulator, SDHCI does not support 2.0v
+		 * so we only get here if the driver deliberately
+		 * added the 2.0v range to ocr_avail. Map it to 1.8v
+		 * for the purpose of turning on the power.
+		 */
+		case MMC_VDD_20_21:
 			pwr = SDHCI_POWER_180;
 			break;
 		case MMC_VDD_29_30:
@@ -494,7 +506,17 @@ static void sdhci_set_power(struct sdhci_host *host, unsigned short power)
 			break;
 		case MMC_VDD_32_33:
 		case MMC_VDD_33_34:
+		/*
+		 * 3.4 ~ 3.6V are valid only for those platforms where it's
+		 * known that the voltage range is supported by hardware.
+		 */
+		case MMC_VDD_34_35:
+		case MMC_VDD_35_36:
 			pwr = SDHCI_POWER_330;
+			break;
+		default:
+			printf("%s: Invalid vdd %#x\n",
+			     __func__, power);
 			break;
 		}
 	}
@@ -651,6 +673,7 @@ static int sdhci_set_ios(struct mmc *mmc)
 	struct sdhci_host *host = mmc->priv;
 	bool no_hispd_bit = false;
 
+	printf("%s: Entering func\n", __func__);
 	if (host->ops && host->ops->set_control_reg)
 		host->ops->set_control_reg(host);
 
@@ -700,6 +723,7 @@ static int sdhci_set_ios(struct mmc *mmc)
 			ctrl &= ~SDHCI_CTRL_HISPD;
 	}
 
+	printf("%s: Writing 0x%x at SDHCI_HOST_CONTROL\n", __func__, ctrl);
 	sdhci_writeb(host, ctrl, SDHCI_HOST_CONTROL);
 
 	/* If available, call the driver specific "post" set_ios() function */
