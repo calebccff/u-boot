@@ -346,6 +346,8 @@ static int qusb2phy_power_on(struct phy *phy)
 	int ret;
 	u32 val;
 
+	printf("qusb2 phy power on\n");
+
 	ret = qusb2phy_do_reset(qphy);
 	if (ret)
 		return ret;
@@ -431,6 +433,8 @@ static int qusb2phy_probe(struct udevice *dev)
 	struct qusb2_phy *qphy = dev_get_priv(dev);
 	int ret;
 
+	printf("qusb2 phy probe\n");
+
 	qphy->base = (void __iomem *)dev_read_addr(dev);
 	if (IS_ERR(qphy->base))
 		return PTR_ERR(qphy->base);
@@ -439,7 +443,7 @@ static int qusb2phy_probe(struct udevice *dev)
 	if (ret)
 		return ret;
 
-	ret = reset_get_by_name(dev, "phy", &qphy->phy_rst);
+	ret = reset_get_by_index(dev, 0, &qphy->phy_rst);
 	if (ret)
 		return ret;
 
