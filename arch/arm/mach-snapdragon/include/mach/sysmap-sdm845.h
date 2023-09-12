@@ -39,4 +39,6 @@
 #define SE9_UART_APPS_N		(0x18154)
 #define SE9_UART_APPS_D		(0x18158)
 
+#define USB30_SEC_GDSCR		(0x10004)
+
 #endif
