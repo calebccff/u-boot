@@ -20,6 +20,7 @@
 #include <linux/usb/ch9.h>
 #include <linux/usb/gadget.h>
 #include <malloc.h>
+#include <power/regulator.h>
 #include <usb.h>
 #include "core.h"
 #include "gadget.h"
@@ -46,6 +47,7 @@ struct dwc3_generic_priv {
 struct dwc3_generic_host_priv {
 	struct xhci_ctrl xhci_ctrl;
 	struct dwc3_generic_priv gen_priv;
+	struct udevice *vbus_dev;
 };
 
 static int dwc3_generic_probe(struct udevice *dev,
@@ -238,6 +240,13 @@ static int dwc3_generic_host_probe(struct udevice *dev)
 	if (rc)
 		return rc;
 
+	rc = device_get_supply_regulator(dev, "vbus-supply", &priv->vbus_dev);
+	if (rc)
+		debug("%s: No vbus regulator found: %d\n", __func__, rc);
+
+	if (priv->vbus_dev)
+		regulator_set_enable(priv->vbus_dev, true);
+
 	hccr = (struct xhci_hccr *)priv->gen_priv.base;
 	hcor = (struct xhci_hcor *)(priv->gen_priv.base +
 			HC_LENGTH(xhci_readl(&(hccr)->cr_capbase)));
@@ -253,6 +262,9 @@ static int dwc3_generic_host_remove(struct udevice *dev)
 	rc = xhci_deregister(dev);
 	if (rc)
 		return rc;
+
+	if (priv->vbus_dev)
+		regulator_set_enable(priv->vbus_dev, false);
 
 	return dwc3_generic_remove(dev, &priv->gen_priv);
 }
