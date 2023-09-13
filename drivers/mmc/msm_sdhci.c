@@ -168,7 +168,6 @@ static int msm_sdc_clk_init(struct msm_sdhc *prv, struct udevice *dev)
 	int node = dev_of_offset(dev);
 	uint clk_rate = fdtdec_get_uint(gd->fdt_blob, node, "clock-frequency",
 					400000);
-	struct clk clk;
 	int ret;
 
 	ret = clk_get_bulk(dev, &prv->clks);
@@ -183,7 +182,7 @@ static int msm_sdc_clk_init(struct msm_sdhc *prv, struct udevice *dev)
 		return ret;
 	}
 
-	ret = clk_set_rate(&clk, clk_rate);
+	ret = clk_set_rate(&prv->clks.clks[0], clk_rate);
 	if (ret < 0)
 		return ret;
 
