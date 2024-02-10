@@ -24,7 +24,7 @@
 VERSION = 2009
 PATCHLEVEL = 08
 SUBLEVEL =
-EXTRAVERSION = -rc3
+EXTRAVERSION =
 ifneq "$(SUBLEVEL)" ""
 U_BOOT_VERSION = $(VERSION).$(PATCHLEVEL).$(SUBLEVEL)$(EXTRAVERSION)
 else
@@ -1391,6 +1391,10 @@ HUB405_config:	unconfig
 JSE_config:	unconfig
 	@$(MKCONFIG) $(@:_config=) ppc ppc4xx jse
 
+k46_config:	unconfig
+	@mkdir -p $(obj)board/apple/common
+	@$(MKCONFIG) $(@:_config=) ppc ppc4xx k46 apple
+
 KAREF_config: unconfig
 	@$(MKCONFIG) $(@:_config=) ppc ppc4xx karef sandburst
 
@@ -1419,6 +1423,10 @@ luan_config:	unconfig
 
 lwmon5_config:	unconfig
 	@$(MKCONFIG) $(@:_config=) ppc ppc4xx lwmon5
+
+m73_config:	unconfig
+	@mkdir -p $(obj)board/apple/common
+	@$(MKCONFIG) $(@:_config=) ppc ppc4xx m73 apple
 
 makalu_config:	unconfig
 	@$(MKCONFIG) $(@:_config=) ppc ppc4xx makalu amcc

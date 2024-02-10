@@ -45,6 +45,9 @@
 
 #include "ecc.h"
 
+#define MEMORY_CHUNK_BOTTOM 0x8000 /* 32 KB */
+#define MEMORY_CHUNK_TOP 0x100000 /* 1 MB */
+
 #if defined(CONFIG_SDRAM_PPC4xx_IBM_DDR) || \
     defined(CONFIG_SDRAM_PPC4xx_IBM_DDR2)
 #if defined(CONFIG_DDR_ECC) || defined(CONFIG_SDRAM_ECC)
@@ -104,6 +107,55 @@ void ecc_init(unsigned long * const start, unsigned long size)
 		increment = sizeof(u64);
 #endif /* defined(CONFIG_440) */
 
+
+	/* Bottom memory chunk */
+	if (size > (MEMORY_CHUNK_BOTTOM + MEMORY_CHUNK_TOP))
+	{
+		while (current < (unsigned long *)MEMORY_CHUNK_BOTTOM) {
+			*current = pattern;
+			current = (unsigned long *)((long)current + increment);
+		}
+
+		current = (unsigned long * const)((long)start + size - MEMORY_CHUNK_TOP);
+	}
+
+	while (current < end) {
+		*current = pattern;
+		 current = (unsigned long *)((long)current + increment);
+	}
+
+	/* Wait until the writes are finished. */
+
+	sync();
+}
+
+void ecc_init_post(unsigned long * const start, unsigned long size)
+{
+	const unsigned long pattern = CONFIG_SYS_ECC_PATTERN;
+	unsigned long * const end = (unsigned long * const)((long)start + size - MEMORY_CHUNK_TOP);;
+	unsigned long * current;
+	unsigned long mcopt1;
+	long increment;
+
+	if (size < MEMORY_CHUNK_BOTTOM + MEMORY_CHUNK_TOP)
+		return;
+
+	current = (unsigned long * const)((long)start + MEMORY_CHUNK_BOTTOM);
+
+	mfsdram(SDRAM_ECC_CFG, mcopt1);
+
+	increment = sizeof(u32);
+
+#if defined(CONFIG_440)
+	/*
+	 * Look at the geometry of SDRAM (data width) to determine whether we
+	 * can skip words when writing.
+	 */
+
+	if ((mcopt1 & SDRAM_ECC_CFG_DMWD_MASK) != SDRAM_ECC_CFG_DMWD_32)
+		increment = sizeof(u64);
+#endif /* defined(CONFIG_440) */
+
 	while (current < end) {
 		*current = pattern;
 		 current = (unsigned long *)((long)current + increment);
@@ -118,5 +170,6 @@ void ecc_init(unsigned long * const start, unsigned long size)
 	mtsdram(SDRAM_ECC_CFG, ((mcopt1 & ~SDRAM_ECC_CFG_MCHK_MASK) |
 				SDRAM_ECC_CFG_MCHK_CHK));
 }
+
 #endif /* defined(CONFIG_DDR_ECC) || defined(CONFIG_SDRAM_ECC) */
 #endif /* defined(CONFIG_SDRAM_PPC4xx_IBM_DDR)... */

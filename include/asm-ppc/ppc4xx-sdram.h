@@ -580,7 +580,7 @@
 #define SDRAM_RFDC_RFFD_MASK		0x000007FF
 #define SDRAM_RFDC_RFFD_ENCODE(n)	((((u32)(n))&0x7FF)<<0)
 
-#define SDRAM_RFDC_RFFD_MAX		0x7FF
+#define SDRAM_RFDC_RFFD_MAX		0x4FF
 
 /*
  * SDRAM Delay Line Calibration Register
@@ -832,6 +832,21 @@
 #define SDRAM_MEMODE_DLL_ENABLE			JEDEC_MA_EMR_DLL_ENABLE
 
 /*
+ * SDRAM Feedback Calibration Status Register
+ */
+#define SDRAM_FCSR_R0CNT_MASK		0xf0000000	
+#define SDRAM_FCSR_R1CNT_MASK		0x0f000000
+#define SDRAM_FCSR_R0MOS		0x00008000
+#define SDRAM_FCSR_R1MOS		0x00004000
+#define SDRAM_FCSR_R2MOS		0x00002000
+#define SDRAM_FCSR_R3MOS		0x00001000
+#define SDRAM_FCSR_RSELV_RANK0		0x00000800
+#define SDRAM_FCSR_RSELV_RANK1		0x00000400
+#define SDRAM_FCSR_CDSS_MASK		0x000000c0
+#define SDRAM_FCSR_CMOS_MOS		0x00000010
+#define SDRAM_FCSR_ALL_MOS_MASK		0x0000f010
+
+/*
  * SDRAM Clock Timing Register
  */
 #define SDRAM_CLKTR_CLKP_MASK		0xC0000000
@@ -962,6 +977,7 @@
 #define SDRAM_RTSR_TRK1SM_MISSED	0x40000000	/* missed state		*/
 #define SDRAM_RTSR_TRK1SM_ATPLS1	0x80000000	/* atpls1 state		*/
 #define SDRAM_RTSR_TRK1SM_RESET		0xC0000000	/* reset  state		*/
+#define SDRAM_RTSR_RHOS			0x00000040	/* RT Hit Oversample    */
 
 #define SDR0_MFR_FIXD			0x10000000	/* Workaround for PCI/DMA */
 
@@ -1410,6 +1426,12 @@
 #endif /* CONFIG_SDRAM_PPC4xx_DENALI_DDR2 */
 
 #ifndef __ASSEMBLY__
+
+struct sdram_timing {
+        u32 wrdtr;
+        u32 clktr;
+};
+
 /*
  * Prototypes
  */

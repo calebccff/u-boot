@@ -214,6 +214,7 @@ LIST_4xx="		\
 	HH405		\
 	HUB405		\
 	JSE		\
+	k46		\
 	KAREF		\
 	katmai		\
 	kilauea		\
@@ -221,6 +222,7 @@ LIST_4xx="		\
 	korat		\
 	luan		\
 	lwmon5		\
+	m73		\
 	makalu		\
 	mcu25		\
 	METROBOX	\

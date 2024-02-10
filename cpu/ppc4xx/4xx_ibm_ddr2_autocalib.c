@@ -58,56 +58,46 @@
 #else
 #define NUMMEMTESTS		8
 #endif /* CONFIG_SYS_DECREMENT_PATTERNS */
+
+#if 0
 #define NUMLOOPS		1	/* configure as you deem approporiate */
 #define NUMMEMWORDS		16
+#else
+#define NUMLOOPS		2	/* configure as you deem approporiate */
+#define NUMMEMWORDS		16
+#endif
 
 #define SDRAM_RDCC_RDSS_VAL(n)	SDRAM_RDCC_RDSS_DECODE(ddr_rdss_opt(n))
 
 /* Private Structure Definitions */
-
-struct autocal_regs {
-	u32 rffd;
-	u32 rqfd;
-};
-
 struct ddrautocal {
-	u32 rffd;
-	u32 rffd_min;
-	u32 rffd_max;
 	u32 rffd_size;
-	u32 rqfd;
 	u32 rqfd_size;
+	u32 rffd_mid;
+	u32 rqfd_mid;
+	u32 hos_ct;
+	
+	u32 wdtr;
+	u32 clkp;
 	u32 rdcc;
-	u32 flags;
 };
 
-struct sdram_timing {
-	u32 wrdtr;
-	u32 clktr;
-};
-
-struct sdram_timing_clks {
-	u32 wrdtr;
-	u32 clktr;
+struct ddr_rffd {
+	u32 size;
+	u32 start;
+	u32 end;
 	u32 rdcc;
-	u32 flags;
+	u32 hos_ct;
 };
 
-struct autocal_clks {
-	struct sdram_timing_clks clocks;
-	struct ddrautocal	 autocal;
-};
 
 /*--------------------------------------------------------------------------+
  * Prototypes
  *--------------------------------------------------------------------------*/
 #if defined(CONFIG_PPC4xx_DDR_METHOD_A)
-static u32 DQS_calibration_methodA(struct ddrautocal *);
 static u32 program_DQS_calibration_methodA(struct ddrautocal *);
-#else
-static u32 DQS_calibration_methodB(struct ddrautocal *);
-static u32 program_DQS_calibration_methodB(struct ddrautocal *);
 #endif
+
 static int short_mem_test(u32 *);
 
 /*
@@ -143,6 +133,7 @@ void
 spd_ddr_init_hang(void) __attribute__((weak, alias("__spd_ddr_init_hang")));
 #endif /* defined(CONFIG_SPD_EEPROM) */
 
+
 ulong __ddr_scan_option(ulong default_val)
 {
 	return default_val;
@@ -154,6 +145,30 @@ u32 __ddr_rdss_opt(u32 default_val)
 	return default_val;
 }
 u32 ddr_rdss_opt(ulong) __attribute__((weak, alias("__ddr_rdss_opt")));
+
+u32 __ddr_rqfd_start_opt(u32 default_val)
+{
+	return default_val;
+}
+u32 ddr_rqfd_start_opt(u32) __attribute__((weak, alias("__ddr_rqfd_start_opt")));
+
+u32 __ddr_rqfd_end_opt(u32 default_val)
+{
+	return default_val;
+}
+u32 ddr_rqfd_end_opt(u32) __attribute__((weak, alias("__ddr_rqfd_end_opt")));
+
+u32 __ddr_rffd_start_opt(u32 default_val)
+{
+	return default_val;
+}
+u32 ddr_rffd_start_opt(u32) __attribute__((weak, alias("__ddr_rffd_start_opt")));
+
+u32 __ddr_rffd_end_opt(u32 default_val)
+{
+	return default_val;
+}
+u32 ddr_rffd_end_opt(u32) __attribute__((weak, alias("__ddr_rffd_end_opt")));
 
 
 static u32 *get_membase(int bxcr_num)
@@ -373,27 +388,169 @@ static int short_mem_test(u32 *base_address)
 }
 
 #if defined(CONFIG_PPC4xx_DDR_METHOD_A)
-/*-----------------------------------------------------------------------------+
-| program_DQS_calibration_methodA.
-+-----------------------------------------------------------------------------*/
-static u32 program_DQS_calibration_methodA(struct ddrautocal *ddrcal)
+/*
+ * RFFD window discovery function
+ * Finds the "best" RFFD window for the current settings.
+ * Selection, in order of preference, is based on:
+ *	1 - Hit Oversample count (filters out miss oversamples)
+ *	2 - Window Size
+ *
+ * To simplify the calibration functions, this portion has been isolated.
+ * 
+ */
+static u32 DQS_FindRFFDWindow(struct ddr_rffd *rffd_cfg, int bFindBest)
 {
-	u32 pass_result = 0;
+	u32 first_pass,
+		first_fail,
+		mid_point,
+		index;
+	u32 bxcr_num, bxcf;
+	u32 fcsr_reg,
+		rtsr_reg,
+		rfdc_reg;
+	u32 best_start,
+		best_end,
+		best_hos;
+	int bPass, 
+		bNewBestFound;
+	int test_result;
+	u32 hos_ct;
+	u32 *membase;
+	
+	/* init */
+	first_pass = first_fail = hos_ct = 0;
+	mid_point = best_start = 0;
+	best_hos = best_end = 0;
+	bPass = bNewBestFound = 0;
+	test_result = 0;
 
-#ifdef DEBUG
-	ulong temp;
+	for (index = rffd_cfg->start; index <= rffd_cfg->end; index++) {
+		mfsdram(SDRAM_RFDC, rfdc_reg);
+		rfdc_reg &= ~(SDRAM_RFDC_RFFD_MASK);
+		mtsdram(SDRAM_RFDC, 
+			rfdc_reg | SDRAM_RFDC_RFFD_ENCODE(index));
 
-	mfsdram(SDRAM_RDCC, temp);
-	debug("<%s>SDRAM_RDCC=0x%08x\n", __func__, temp);
-#endif
+		for (bxcr_num = 0; bxcr_num < MAXBXCF; bxcr_num++) {
+			mfsdram(SDRAM_MB0CF + (bxcr_num<<2), bxcf);
 
-	pass_result = DQS_calibration_methodA(ddrcal);
+			/* Banks enabled */
+			if (bxcf & SDRAM_BXCF_M_BE_MASK) {
+				/* Bank is enabled */
+				membase = get_membase(bxcr_num);
+				test_result = short_mem_test(membase);
+			} /* if bank enabled */
+		} /* for bxcr_num */
 
-	return pass_result;
+
+		/* If this value passed, check for RFFD window start */
+		if (test_result) {
+			if (!bPass) {
+				/* first pass found, mark window start */
+				bPass = 1;
+				first_pass = index;
+				/* record rdcc */
+				mfsdram(SDRAM_RDCC, rffd_cfg->rdcc);
+			}
+
+			/* capture FCSR for oversample miss filtering */
+			mfsdram(SDRAM_FCSR, fcsr_reg);
+			/* capture RTR for oversample miss filtering */
+			mfsdram(SDRAM_RTSR, rtsr_reg);
+			/* this register is sticky, so clear it */
+			mtsdram(SDRAM_RTSR, 0);
+
+			/* track hit oversamples - all must match */
+			if (!(fcsr_reg & SDRAM_FCSR_ALL_MOS_MASK) && 
+				(rtsr_reg & SDRAM_RTSR_RHOS))
+				hos_ct++;
+		} else { /* !test_result */
+			if (bPass) {
+				/* first fail found, marks the end of window */
+				first_fail = index;
+				mid_point = first_fail - first_pass; 
+
+				/* avoid a div-by-0 */
+				if (mid_point >= 2)
+					mid_point = mid_point / 2;
+			}
+		}
+
+		/* Did we find the end of window? */
+		if (first_fail) {
+			/* Compare to saved "best" */
+			if (hos_ct > best_hos)
+				bNewBestFound = 1;
+			if ((hos_ct == best_hos) &&
+				((first_fail - first_pass) > 
+					(best_end - best_start)))
+					bNewBestFound = 1;
+
+			if (bNewBestFound) {
+				best_start = first_pass;
+				best_end = first_fail;
+				best_hos = hos_ct;
+	
+				bNewBestFound = 0;
+			}
+
+
+			/* 
+			 * If bFindBest flagged, scan the full range
+			 * for the "best" window as prioritized.
+			 *
+			 * If !bFindBest, this is part of an RQFD
+			 * window scan and it only needs to know that 
+			 * a valid RFFD window was found so that 
+			 * it can build the RQDC[RQFD] window.
+			 * 
+			 * Return mid_point if !bFindBest.
+			 */
+			if (!bFindBest) 
+				return mid_point;
+
+			/* still looping, reset for next window */
+			first_pass = 0;
+			first_fail = 0;
+			hos_ct = 0;
+			bPass = 0;
+		} /* first_fail != 0 */
+	} /* RFDC for loop */	
+
+	if (bPass && !first_fail) {
+
+		/* the window hit the RFDC_end */
+		first_fail = index;
+
+		/* Compare to saved "best" */
+		if (hos_ct > best_hos)
+			bNewBestFound = 1;
+		if ((hos_ct == best_hos) &&
+			((first_fail - first_pass) > 
+				(best_end - best_start)))
+				bNewBestFound = 1;
+
+		if (bNewBestFound) {
+			best_start = first_pass;
+			best_end = first_fail;
+			best_hos = hos_ct;
+		}
+	} /* if bPass && !first_fail */
+
+	if (best_start && best_end) {
+		if ((best_end - best_start) >= 2)
+			mid_point = (best_end - best_start) / 2;
+		else mid_point = (best_end - best_start);
+		mid_point = best_start + mid_point;
+		rffd_cfg->size = (best_end - best_start);
+		rffd_cfg->hos_ct = best_hos;
+	}
+
+	return mid_point;
 }
 
+
 /*
- * DQS_calibration_methodA()
+ * program_DQS_calibration_methodA()
  *
  * Autocalibration Method A
  *
@@ -410,64 +567,47 @@ static u32 program_DQS_calibration_methodA(struct ddrautocal *ddrcal)
  *      }
  *  }
  */
-static u32 DQS_calibration_methodA(struct ddrautocal *cal)
+static u32 program_DQS_calibration_methodA(struct ddrautocal *cal)
 {
-	ulong rfdc_reg;
-	ulong rffd;
-
-	ulong rqdc_reg;
-	ulong rqfd;
-
-	u32 *membase;
-	ulong bxcf;
-	int rqfd_average;
-	int bxcr_num;
-	int rffd_average;
-	int pass;
-	u32 passed = 0;
-
-	int in_window;
-	struct autocal_regs curr_win_min;
-	struct autocal_regs curr_win_max;
-	struct autocal_regs best_win_min;
-	struct autocal_regs best_win_max;
-	struct autocal_regs loop_win_min;
-	struct autocal_regs loop_win_max;
-
-#ifdef DEBUG
-	ulong temp;
-#endif
-	ulong rdcc;
-
+	u32 rqdc_reg;
+	u32 rqfd_index,
+		rqfd_end,
+		range_index;
+	u32 rqfd_range[SDRAM_RQDC_RQFD_MAX];
+	u32 rffd_highest = 0;
+	u32 min_filter;
+	u32 window_count,
+		max_window_count,
+		win_start,
+		win_end,
+		best_mid;
+	u32 temp; 
+	u8 loopi = 0;
+	struct ddr_rffd rffd_set;
+		
+#if !defined(DEBUG)
 	char slash[] = "\\|/-\\|/-";
-	int loopi = 0;
-
-	/* start */
-	in_window = 0;
-
-	memset(&curr_win_min, 0, sizeof(curr_win_min));
-	memset(&curr_win_max, 0, sizeof(curr_win_max));
-	memset(&best_win_min, 0, sizeof(best_win_min));
-	memset(&best_win_max, 0, sizeof(best_win_max));
-	memset(&loop_win_min, 0, sizeof(loop_win_min));
-	memset(&loop_win_max, 0, sizeof(loop_win_max));
-
-	rdcc = 0;
-
+#else
+	char slash[] = "..........";
+#endif
+	/* init */
+	memset(&rffd_set, 0, sizeof(struct ddr_rffd));
+	win_start = win_end = best_mid = 0;
+	
 	/*
 	 * Program RDCC register
 	 * Read sample cycle auto-update enable
 	 */
 	mtsdram(SDRAM_RDCC,
-		ddr_rdss_opt(SDRAM_RDCC_RDSS_T2) | SDRAM_RDCC_RSAE_ENABLE);
+		ddr_rdss_opt(SDRAM_RDCC_RDSS_T1) | SDRAM_RDCC_RSAE_ENABLE);
 
 #ifdef DEBUG
 	mfsdram(SDRAM_RDCC, temp);
-	debug("<%s>SDRAM_RDCC=0x%x\n", __func__, temp);
+	debug("SDRAM_RDCC=0x%x\n", temp);
 	mfsdram(SDRAM_RTSR, temp);
-	debug("<%s>SDRAM_RTSR=0x%x\n", __func__, temp);
+	debug("SDRAM_RTSR=0x%x\n", temp);
 	mfsdram(SDRAM_FCSR, temp);
-	debug("<%s>SDRAM_FCSR=0x%x\n", __func__, temp);
+	debug("SDRAM_FCSR=0x%x\n", temp);
 #endif
 
 	/*
@@ -479,7 +619,7 @@ static u32 DQS_calibration_methodA(struct ddrautocal *cal)
 
 #ifdef DEBUG
 	mfsdram(SDRAM_RQDC, temp);
-	debug("<%s>SDRAM_RQDC=0x%x\n", __func__, temp);
+	debug("SDRAM_RQDC=0x%x\n", temp);
 #endif
 
 	/*
@@ -488,144 +628,141 @@ static u32 DQS_calibration_methodA(struct ddrautocal *cal)
 	 * Auto-detect read sample cycle enable
 	 */
 	mtsdram(SDRAM_RFDC, SDRAM_RFDC_ARSE_ENABLE |
-		SDRAM_RFDC_RFOS_ENCODE(0) | SDRAM_RFDC_RFFD_ENCODE(0));
+		SDRAM_RFDC_RFOS_ENCODE(0) | SDRAM_RFDC_RFFD_ENCODE(0x38));
 
 #ifdef DEBUG
 	mfsdram(SDRAM_RFDC, temp);
-	debug("<%s>SDRAM_RFDC=0x%x\n", __func__, temp);
+	debug("SDRAM_RFDC=0x%x\n", temp);
 #endif
 
 	putc(' ');
-	for (rqfd = 0; rqfd <= SDRAM_RQDC_RQFD_MAX; rqfd++) {
 
+	/* initialize for loop */
+	rqdc_reg = 0;
+	memset(rqfd_range, 0, sizeof(u32) * SDRAM_RQDC_RQFD_MAX);
+	rqfd_index = ddr_rqfd_start_opt(0);
+	rqfd_end = ddr_rqfd_end_opt(SDRAM_RQDC_RQFD_MAX);
+	rffd_set.start = ddr_rffd_start_opt(0);
+	rffd_set.end = ddr_rffd_end_opt(SDRAM_RFDC_RFFD_MAX);
+	range_index = 0;
+
+	for (; rqfd_index <= rqfd_end; rqfd_index++) {
 		mfsdram(SDRAM_RQDC, rqdc_reg);
 		rqdc_reg &= ~(SDRAM_RQDC_RQFD_MASK);
-		mtsdram(SDRAM_RQDC, rqdc_reg | SDRAM_RQDC_RQFD_ENCODE(rqfd));
-
+		mtsdram(SDRAM_RQDC, 
+			rqdc_reg | SDRAM_RQDC_RQFD_ENCODE(rqfd_index));
+#if !defined(DEBUG)
 		putc('\b');
+#endif
 		putc(slash[loopi++ % 8]);
 
-		curr_win_min.rffd = 0;
-		curr_win_max.rffd = 0;
-		in_window = 0;
+		/* check for best RFFD window to mark RQFD range */
+		rqfd_range[range_index] = DQS_FindRFFDWindow(&rffd_set, 1);
+		
+		/* update highest found, if necessary */
+		if (rqfd_range[range_index] > rffd_highest)
+			rffd_highest = rqfd_range[range_index];
+		range_index++;
+	} /* rqfd scan loop */
 
-		for (rffd = 0, pass = 0; rffd <= SDRAM_RFDC_RFFD_MAX; rffd++) {
-			mfsdram(SDRAM_RFDC, rfdc_reg);
-			rfdc_reg &= ~(SDRAM_RFDC_RFFD_MASK);
-			mtsdram(SDRAM_RFDC,
-				    rfdc_reg | SDRAM_RFDC_RFFD_ENCODE(rffd));
+	/* make certain our scanning found at least one */
+	if (!rffd_highest)
+		return 0;
 
-			for (bxcr_num = 0; bxcr_num < MAXBXCF; bxcr_num++) {
-				mfsdram(SDRAM_MB0CF + (bxcr_num<<2), bxcf);
+	/* use highest to determine our filter */
+	min_filter = rffd_highest / 4;	
 
-				/* Banks enabled */
-				if (bxcf & SDRAM_BXCF_M_BE_MASK) {
-					/* Bank is enabled */
-					membase = get_membase(bxcr_num);
-					pass = short_mem_test(membase);
-				} /* if bank enabled */
-			} /* for bxcr_num */
+	/* 
+	 * Find center of largest distribution of values that meet
+	 * the minimum requirements
+	 * 
+	 * Plotting all of the hits (where x-axis is RQDC mids and 
+	 * y-axis is RFFD mids) should create a bell-type curve. The 
+	 * optimal range is near the top of that curve so this attempts 
+	 * to filter out the edge/lower cases.
+	 *	
+	 * The remaining ranges are searched for the "best window" and the 
+	 * mid-point thereof is the optimal setting.
+	 */
+	rqfd_index = ddr_rqfd_start_opt(0);
+	rqfd_end = ddr_rqfd_end_opt(SDRAM_RQDC_RQFD_MAX);
+	range_index = window_count = max_window_count = 0;
+	for (; rqfd_index <= rqfd_end; rqfd_index++, range_index++) {
+		/* test if value meets filter requirement */
+		if (rqfd_range[range_index] >= min_filter) {
+			/* value is in range */
+			if (window_count++) 
+				win_end = rqfd_index;
+			else /* start of a window */
+				win_end = win_start = rqfd_index;
+				
+			/* track the largest in our filtered area */
+			if (window_count > max_window_count)
+				max_window_count = window_count;
 
-			/* If this value passed update RFFD windows */
-			if (pass && !in_window) { /* at the start of window */
-				in_window = 1;
-				curr_win_min.rffd = curr_win_max.rffd = rffd;
-				curr_win_min.rqfd = curr_win_max.rqfd = rqfd;
-				mfsdram(SDRAM_RDCC, rdcc); /*record this value*/
-			} else if (!pass && in_window) { /* at end of window */
-				in_window = 0;
-			} else if (pass && in_window) { /* within the window */
-				curr_win_max.rffd = rffd;
-				curr_win_max.rqfd = rqfd;
-			}
-			/* else if (!pass && !in_window)
-				skip - no pass, not currently in a window */
+		} else { /* out of filter range */
 
-			if (in_window) {
-				if ((curr_win_max.rffd - curr_win_min.rffd) >
-				    (best_win_max.rffd - best_win_min.rffd)) {
-					best_win_min.rffd = curr_win_min.rffd;
-					best_win_max.rffd = curr_win_max.rffd;
-
-					best_win_min.rqfd = curr_win_min.rqfd;
-					best_win_max.rqfd = curr_win_max.rqfd;
-					cal->rdcc	  = rdcc;
+			/* check for best and reset for next window */
+			if (window_count) {
+				if (window_count >= max_window_count) {
+					temp = win_end - win_start;
+					if (temp >= 2)
+						best_mid = win_start + 
+							(temp / 2);
+					else best_mid = win_start + temp;
 				}
-				passed = 1;
-			}
-		} /* RFDC.RFFD */
 
-		/*
-		 * save-off the best window results of the RFDC.RFFD
-		 * for this RQDC.RQFD setting
-		 */
-		/*
-		 * if (just ended RFDC.RFDC loop pass window) >
-		 *	(prior RFDC.RFFD loop pass window)
-		 */
-		if ((best_win_max.rffd - best_win_min.rffd) >
-		    (loop_win_max.rffd - loop_win_min.rffd)) {
-			loop_win_min.rffd = best_win_min.rffd;
-			loop_win_max.rffd = best_win_max.rffd;
-			loop_win_min.rqfd = rqfd;
-			loop_win_max.rqfd = rqfd;
-			debug("RQFD.min 0x%08x, RQFD.max 0x%08x, "
-			      "RFFD.min 0x%08x, RFFD.max 0x%08x\n",
-					loop_win_min.rqfd, loop_win_max.rqfd,
-					loop_win_min.rffd, loop_win_max.rffd);
+				window_count = 0;
+			} 
+			
 		}
-	} /* RQDC.RQFD */
+	} /* rqfd filter loop */
+	
+	/* failed to find a window for these settings */
+	if (!max_window_count) {
+		debug("RQFD scan did not find a window\n");
+		return 0;
+	}
+
+	if (!(best_mid) || (window_count > max_window_count)) {
+		temp = win_end - win_start;
+		if (temp >= 2)
+			best_mid = win_start + (temp / 2);
+		else
+			best_mid = win_start + temp;
+		max_window_count = window_count;
+	}
+
 
 	putc('\b');
 
 	debug("\n");
 
-	if ((loop_win_min.rffd == 0) && (loop_win_max.rffd == 0) &&
-	    (best_win_min.rffd == 0) && (best_win_max.rffd == 0) &&
-	    (best_win_min.rqfd == 0) && (best_win_max.rqfd == 0)) {
-		passed = 0;
-	}
 
-	/*
-	 * Need to program RQDC before RFDC.
-	 */
-	debug("<%s> RQFD Min: 0x%x\n", __func__, loop_win_min.rqfd);
-	debug("<%s> RQFD Max: 0x%x\n", __func__, loop_win_max.rqfd);
-	rqfd_average = loop_win_max.rqfd;
-
-	if (rqfd_average < 0)
-		rqfd_average = 0;
-
-	if (rqfd_average > SDRAM_RQDC_RQFD_MAX)
-		rqfd_average = SDRAM_RQDC_RQFD_MAX;
-
-	debug("<%s> RFFD average: 0x%08x\n", __func__, rqfd_average);
+	/* Program RQDC[RQFD] mid-point based on results */
+	debug("Selected RQFD mid-point: 0x%08x\n", best_mid);
 	mtsdram(SDRAM_RQDC, (rqdc_reg & ~SDRAM_RQDC_RQFD_MASK) |
-				SDRAM_RQDC_RQFD_ENCODE(rqfd_average));
+				SDRAM_RQDC_RQFD_ENCODE(best_mid));
+	
+	/* Find best RFDC[RFFD] window for selected RQFD mid-point */
+	cal->rffd_mid = DQS_FindRFFDWindow(&rffd_set, 1);
 
-	debug("<%s> RFFD Min: 0x%08x\n", __func__, loop_win_min.rffd);
-	debug("<%s> RFFD Max: 0x%08x\n", __func__, loop_win_max.rffd);
-	rffd_average = ((loop_win_min.rffd + loop_win_max.rffd) / 2);
-
-	if (rffd_average < 0)
-		rffd_average = 0;
-
-	if (rffd_average > SDRAM_RFDC_RFFD_MAX)
-		rffd_average = SDRAM_RFDC_RFFD_MAX;
-
-	debug("<%s> RFFD average: 0x%08x\n", __func__, rffd_average);
-	mtsdram(SDRAM_RFDC, rfdc_reg | SDRAM_RFDC_RFFD_ENCODE(rffd_average));
-
-	/* if something passed, then return the size of the largest window */
-	if (passed != 0) {
-		passed		= loop_win_max.rffd - loop_win_min.rffd;
-		cal->rqfd	= rqfd_average;
-		cal->rffd	= rffd_average;
-		cal->rffd_min	= loop_win_min.rffd;
-		cal->rffd_max	= loop_win_max.rffd;
+	if (!(cal->rffd_mid)) {
+		/* did not find a valid RFFD window */
+		debug("No RFDC[RFFD] window found for RQDC[RQFD] = 0x%04x\n",
+			best_mid);
+		return 0;
 	}
 
-	return (u32)passed;
+	/* Save out the found mid points and windows */
+	cal->rffd_size = rffd_set.size;
+	cal->rqfd_size = max_window_count;
+	cal->rqfd_mid = best_mid;
+	cal->rdcc = rffd_set.rdcc;
+	cal->hos_ct = rffd_set.hos_ct;
+
+	/* notify top level calibration of returned values */
+	return 1;
 }
 
 #else	/* !defined(CONFIG_PPC4xx_DDR_METHOD_A) */
@@ -724,12 +861,10 @@ static u32 DQS_calibration_methodB(struct ddrautocal *cal)
 {
 	ulong rfdc_reg;
 	ulong rffd;
-
 	ulong rqdc_reg;
 	ulong rqfd;
-
 	ulong rdcc;
-
+	ulong fcsr_reg;
 	u32 *membase;
 	ulong bxcf;
 	int rqfd_average;
@@ -737,8 +872,10 @@ static u32 DQS_calibration_methodB(struct ddrautocal *cal)
 	int rffd_average;
 	int pass;
 	uint passed = 0;
+	u32 hos_count = 0;
 
 	int in_window;
+	u32 best_hos = 0, loop_hos = 0;
 	u32 curr_win_min, curr_win_max;
 	u32 best_win_min, best_win_max;
 	u32 size = 0;
@@ -791,15 +928,22 @@ static u32 DQS_calibration_methodB(struct ddrautocal *cal)
 			} /* if bank enabled */
 		} /* for bxcf_num */
 
+		/* capture FCSR for updating hit-oversample count */
+		mfsdram(SDRAM_FCSR, fcsr_reg);
+
 		/* If this value passed */
 		if (pass && !in_window) {	/* start of passing window */
 			in_window = 1;
 			curr_win_min = curr_win_max = rffd;
+			if (!(fcsr_reg & SDRAM_FCSR_CMOS_MOS))
+				hos_count = 1;
 			mfsdram(SDRAM_RDCC, rdcc);	/* record this value */
 		} else if (!pass && in_window) {	/* end passing window */
 			in_window = 0;
 		} else if (pass && in_window) {	/* within the passing window */
 			curr_win_max = rffd;
+			if (!(fcsr_reg & SDRAM_FCSR_CMOS_MOS))
+				hos_count++;
 		}
 
 		if (in_window) {
@@ -929,16 +1073,18 @@ static u32 DQS_calibration_methodB(struct ddrautocal *cal)
  * known working {SDRAM_WRDTR.[WDTR], SDRAM_CLKTR.[CKTR]} value
  * pairs via a board defined ddr_scan_option() function.
  */
+#if 1
 struct sdram_timing full_scan_options[] = {
-	{0, 0}, {0, 1}, {0, 2}, {0, 3},
-	{1, 0}, {1, 1}, {1, 2}, {1, 3},
+	{3, 0},	{3, 1}, {3, 2}, {3, 3},
 	{2, 0}, {2, 1}, {2, 2}, {2, 3},
-	{3, 0}, {3, 1}, {3, 2}, {3, 3},
 	{4, 0}, {4, 1}, {4, 2}, {4, 3},
+	{1, 0}, {1, 1}, {1, 2}, {1, 3},
 	{5, 0}, {5, 1}, {5, 2}, {5, 3},
+	{0, 0}, {0, 1}, {0, 2}, {0, 3},
 	{6, 0}, {6, 1}, {6, 2}, {6, 3},
 	{-1, -1}
 };
+#endif
 
 /*---------------------------------------------------------------------------+
 | DQS_calibration.
@@ -948,16 +1094,19 @@ u32 DQS_autocalibration(void)
 	u32 wdtr;
 	u32 clkp;
 	u32 result = 0;
-	u32 best_result = 0;
-	u32 best_rdcc;
 	struct ddrautocal ddrcal;
-	struct autocal_clks tcal;
+	struct ddrautocal best_ddrcal;
 	ulong rfdc_reg;
 	ulong rqdc_reg;
 	u32 val;
 	int verbose_lvl = 0;
+	int bUpdateBest = 0;
 	char *str;
+#if !defined(DEBUG)
 	char slash[] = "\\|/-\\|/-";
+#else	
+	char slash[] = "..........";
+#endif
 	int loopi = 0;
 	struct sdram_timing *scan_list;
 
@@ -966,7 +1115,9 @@ u32 DQS_autocalibration(void)
 	char tmp[64];	/* long enough for environment variables */
 #endif
 
-	memset(&tcal, 0, sizeof(tcal));
+	/* init structures */
+	memset(&ddrcal, 0, sizeof(ddrcal));
+	memset(&best_ddrcal, 0, sizeof(best_ddrcal));
 
 	ddr_scan_option((ulong)full_scan_options);
 
@@ -998,64 +1149,68 @@ u32 DQS_autocalibration(void)
 	}
 #endif /* (DEBUG_PPC4xx_DDR_AUTOCALIBRATION) */
 
-	best_rdcc = (SDRAM_RDCC_RDSS_T4 >> 30);
-
 	while ((scan_list->wrdtr != -1) && (scan_list->clktr != -1)) {
 		wdtr = scan_list->wrdtr;
 		clkp = scan_list->clktr;
 
+		mtsdram(SDRAM_CLKTR, clkp << 30);
 		mfsdram(SDRAM_WRDTR, val);
 		val &= ~(SDRAM_WRDTR_LLWP_MASK | SDRAM_WRDTR_WTR_MASK);
 		mtsdram(SDRAM_WRDTR, (val |
 			ddr_wrdtr(SDRAM_WRDTR_LLWP_1_CYC | (wdtr << 25))));
-
-		mtsdram(SDRAM_CLKTR, clkp << 30);
-
+		
 		relock_memory_DLL();
-
+#if !defined(DEBUG)
 		putc('\b');
+#endif
 		putc(slash[loopi++ % 8]);
 
-#ifdef DEBUG
-		debug("\n");
-		debug("*** --------------\n");
-		mfsdram(SDRAM_WRDTR, val);
-		debug("*** SDRAM_WRDTR set to 0x%08x\n", val);
-		mfsdram(SDRAM_CLKTR, val);
-		debug("*** SDRAM_CLKTR set to 0x%08x\n", val);
-#endif
-
-		debug("\n");
 		if (verbose_lvl > 2) {
-			printf("*** SDRAM_WRDTR (wdtr) set to %d\n", wdtr);
-			printf("*** SDRAM_CLKTR (clkp) set to %d\n", clkp);
+			printf("\n*** Start WDTR/CLKP loop--------------\n");
+			mfsdram(SDRAM_WRDTR, val);
+			printf("*** SDRAM_WRDTR set to 0x%08x\n", val);
+			mfsdram(SDRAM_CLKTR, val);
+			printf("*** SDRAM_CLKTR set to 0x%08x\n", val);
+
+			printf("\n");
+
+			//printf("*** SDRAM_WRDTR[WDTR] = %d\n", wdtr);
+			//printf("*** SDRAM_CLKTR[clkp] = %d\n", clkp);
 		}
 
 		memset(&ddrcal, 0, sizeof(ddrcal));
+		ddrcal.wdtr = wdtr;
+		ddrcal.clkp = clkp;
 
 		/*
 		 * DQS calibration.
 		 */
 		/*
 		 * program_DQS_calibration_method[A|B]() returns 0 if no
-		 * passing RFDC.[RFFD] window is found or returns the size
-		 * of the best passing window; in the case of a found passing
-		 * window, the ddrcal will contain the values of the best
-		 * window RQDC.[RQFD] and RFDC.[RFFD].
+		 * passing RFDC.[RFFD] window is found. Otherwise a non-zero 
+		 * value is returned.
+		 * The ddrcal structure contains the settings found.
 		 */
 
 		/*
-		 * Call PPC4xx SDRAM DDR autocalibration methodA or methodB.
-		 * Default is methodB.
-		 * Defined the autocalibration method in the board specific
-		 * header file.
-		 * Please see include/configs/kilauea.h for an example for
-		 * a board specific implementation.
+		 * Call PPC4xx SDRAM DDR autocalibration (methodA).
+		 * MethodB as implemented is not recommended. 
+		 *
+		 * For faster calibration, full scan statistics should be 
+		 * gathered during the prototype or  manufacturing stage to 
+		 * determine typical RQFD & RFFD ranges and a subset of valid 
+		 * WDTR & CLKP combinations for the platform. 
+		 * 
+		 * These ranges and subsets are *implementation* specific. 
+		 * Without the use of external measuring equipment, there 
+		 * is no shortcut to this process.
+		 *	
+		 * Please see include/configs/kilauea.h and 
+		 * board/amcc/kilauea/kilauea.c for an example for a board 
+		 * specific implementation.
 		 */
 #if defined(CONFIG_PPC4xx_DDR_METHOD_A)
 		result = program_DQS_calibration_methodA(&ddrcal);
-#else
-		result = program_DQS_calibration_methodB(&ddrcal);
 #endif
 
 		sync();
@@ -1071,7 +1226,7 @@ u32 DQS_autocalibration(void)
 
 		udelay(100);
 
-		if (verbose_lvl > 1) {
+		if ((verbose_lvl > 1) && result) {
 			char *tstr;
 			switch ((val >> 30)) {
 			case 0:
@@ -1093,103 +1248,117 @@ u32 DQS_autocalibration(void)
 				tstr = "unknown";
 				break;
 			}
-			printf("** WRDTR(%d) CLKTR(%d), Wind (%d), best (%d), "
-			       "max-min(0x%04x)(0x%04x), RDCC: %s\n",
-				wdtr, clkp, result, best_result,
-				ddrcal.rffd_min, ddrcal.rffd_max, tstr);
+			printf("*************************************\n");
+			printf("** WRDTR[WDTR] = 0x%04x\n", wdtr);
+			printf("** CLKTR[CLKP] = 0x%04x\n", clkp);
+			printf("** RFDC[RFFD] = 0x%04x\n", ddrcal.rffd_mid);
+			printf("** RQDC[RQFD] = 0x%04x\n", ddrcal.rqfd_mid);
+			if ((ddrcal.rffd_size / 2) > ddrcal.rffd_mid) 
+				val = 0;
+			else 
+				val = ddrcal.rffd_mid - (ddrcal.rffd_size / 2);
+			printf("** RFFD window: 0x%04x <-> ", val);
+				
+			printf(" 0x%04x (%d)\n",
+				ddrcal.rffd_mid + (ddrcal.rffd_size / 2),
+				ddrcal.rffd_size);
+
+			if ((ddrcal.rqfd_size / 2) > ddrcal.rqfd_mid)
+				val = 0;
+			else
+				val = ddrcal.rqfd_mid - (ddrcal.rqfd_size / 2);
+			printf("** RQFD window: 0x%04x <-> ", val);
+			printf("0x%04x (%d)\n",
+				ddrcal.rqfd_mid + (ddrcal.rqfd_size / 2),
+				ddrcal.rqfd_size);
+			printf("** HOS count = %d\n", ddrcal.hos_ct);
+			printf("** RDCC[RDSS] = %s\n", tstr);
+			printf("*************************************\n");
 		}
 
-		/*
-		 * The DQS calibration "result" is either "0"
-		 * if no passing window was found, or is the
-		 * size of the RFFD passing window.
+
+		/* 
+		 * Save off the best combination.
+		 * "Best" is determined by the following priority:
+		 *	1) Highest HOS count
+		 *	2) largest RFFD window
+		 * 	3) largest RQFD window
+		 *	4) preference to RDCC[RDSS] = Tx+ for most layouts
 		 */
-		/*
-		 * want the lowest Read Sample Cycle Select
-		 */
-		val = SDRAM_RDCC_RDSS_DECODE(val);
-		debug("*** (%d) (%d) current_rdcc, best_rdcc\n",
-			val, best_rdcc);
 
-		if ((result != 0) &&
-		    (val >= SDRAM_RDCC_RDSS_VAL(SDRAM_RDCC_RDSS_T2))) {
-			if (((result == best_result) && (val < best_rdcc)) ||
-			    ((result > best_result) && (val <= best_rdcc))) {
-				tcal.autocal.flags = 1;
-				debug("*** (%d)(%d) result passed window "
-					"size: 0x%08x, rqfd = 0x%08x, "
-					"rffd = 0x%08x, rdcc = 0x%08x\n",
-					wdtr, clkp, result, ddrcal.rqfd,
-					ddrcal.rffd, ddrcal.rdcc);
+		if (ddrcal.hos_ct > best_ddrcal.hos_ct)
+			bUpdateBest = 1;
 
-				/*
-				 * Save the SDRAM_WRDTR and SDRAM_CLKTR
-				 * settings for the largest returned
-				 * RFFD passing window size.
-				 */
-				best_rdcc = val;
-				tcal.clocks.wrdtr = wdtr;
-				tcal.clocks.clktr = clkp;
-				tcal.clocks.rdcc = SDRAM_RDCC_RDSS_ENCODE(val);
-				tcal.autocal.rqfd = ddrcal.rqfd;
-				tcal.autocal.rffd = ddrcal.rffd;
-				best_result = result;
+		if ((ddrcal.hos_ct == best_ddrcal.hos_ct) &&
+			(ddrcal.rffd_size > best_ddrcal.rffd_size))
+			bUpdateBest = 1;
+		else if ((ddrcal.hos_ct == best_ddrcal.hos_ct) && 
+			(ddrcal.rffd_size == best_ddrcal.rffd_size)) {
 
-					if (verbose_lvl > 2) {
-						printf("** (%d)(%d)  "
-						       "best result: 0x%04x\n",
-							wdtr, clkp,
-							best_result);
-						printf("** (%d)(%d)  "
-						       "best WRDTR: 0x%04x\n",
-							wdtr, clkp,
-							tcal.clocks.wrdtr);
-						printf("** (%d)(%d)  "
-						       "best CLKTR: 0x%04x\n",
-							wdtr, clkp,
-							tcal.clocks.clktr);
-						printf("** (%d)(%d)  "
-						       "best RQDC: 0x%04x\n",
-							wdtr, clkp,
-							tcal.autocal.rqfd);
-						printf("** (%d)(%d)  "
-						       "best RFDC: 0x%04x\n",
-							wdtr, clkp,
-							tcal.autocal.rffd);
-						printf("** (%d)(%d)  "
-						       "best RDCC: 0x%08x\n",
-							wdtr, clkp,
-							(u32)tcal.clocks.rdcc);
-						mfsdram(SDRAM_RTSR, val);
-						printf("** (%d)(%d)  best "
-						       "loop RTSR: 0x%08x\n",
-							wdtr, clkp, val);
-						mfsdram(SDRAM_FCSR, val);
-						printf("** (%d)(%d)  best "
-						       "loop FCSR: 0x%08x\n",
-							wdtr, clkp, val);
-					}
-			}
-		} /* if ((result != 0) && (val >= (ddr_rdss_opt()))) */
+			/* secondary and tertiary "best" checks */
+			if (ddrcal.rqfd_size > best_ddrcal.rqfd_size)
+				bUpdateBest = 1;
+
+			if (ddrcal.rqfd_size == best_ddrcal.rqfd_size)
+				if (ddrcal.rdcc > best_ddrcal.rdcc)
+					bUpdateBest = 1;
+		}
+
+
+		if (bUpdateBest) {
+			best_ddrcal.rffd_size = ddrcal.rffd_size;
+			best_ddrcal.rqfd_size = ddrcal.rqfd_size;
+			best_ddrcal.rffd_mid = ddrcal.rffd_mid;
+			best_ddrcal.rqfd_mid = ddrcal.rqfd_mid;
+			best_ddrcal.rdcc = ddrcal.rdcc;
+			best_ddrcal.wdtr = ddrcal.wdtr;
+			best_ddrcal.clkp = ddrcal.clkp;
+			best_ddrcal.hos_ct = ddrcal.hos_ct;
+			bUpdateBest = 0;
+		}
+
+		if (verbose_lvl > 2) 
+			printf("*** End WDTR/CLKP loop--------------\n\n");
+
 		scan_list++;
 	} /* while ((scan_list->wrdtr != -1) && (scan_list->clktr != -1)) */
 
-	if (tcal.autocal.flags == 1) {
+	if (best_ddrcal.rffd_size && best_ddrcal.rqfd_size) {
 		if (verbose_lvl > 0) {
-			printf("*** --------------\n");
-			printf("*** best_result window size: %d\n",
-							best_result);
-			printf("*** best_result WRDTR: 0x%04x\n",
-							tcal.clocks.wrdtr);
-			printf("*** best_result CLKTR: 0x%04x\n",
-							tcal.clocks.clktr);
-			printf("*** best_result RQFD: 0x%04x\n",
-							tcal.autocal.rqfd);
-			printf("*** best_result RFFD: 0x%04x\n",
-							tcal.autocal.rffd);
-			printf("*** best_result RDCC: 0x%04x\n",
-							tcal.clocks.rdcc);
-			printf("*** --------------\n");
+			printf("\n*** -- Final Calibration Results --\n");
+			printf("** WRDTR[WDTR] = 0x%04x\n", best_ddrcal.wdtr);
+			printf("** CLKTR[CLKP] = 0x%04x\n", best_ddrcal.clkp);
+			printf("** RFDC[RFFD] = 0x%04x\n", 
+				best_ddrcal.rffd_mid);
+			printf("** RQDC[RQFD] = 0x%04x\n", 
+				best_ddrcal.rqfd_mid);
+			if ((best_ddrcal.rffd_size / 2) > best_ddrcal.rffd_mid)
+				val = 0;
+			else 
+				val = best_ddrcal.rffd_mid - 
+					(best_ddrcal.rffd_size / 2);
+			printf("** RFFD window: 0x%04x <-> ", val);
+				
+			printf(" 0x%04x (%d)\n",
+				best_ddrcal.rffd_mid + 
+					(best_ddrcal.rffd_size / 2),
+					best_ddrcal.rffd_size);
+
+			if ((best_ddrcal.rqfd_size / 2) > best_ddrcal.rqfd_mid)
+				val = 0;
+			else
+				val = best_ddrcal.rqfd_mid - 
+					(best_ddrcal.rqfd_size / 2);
+			printf("** RQFD window: 0x%04x <-> ", val);
+			printf("0x%04x (%d)\n",
+				best_ddrcal.rqfd_mid + 
+					(best_ddrcal.rqfd_size / 2),
+					best_ddrcal.rqfd_size);
+
+			printf("** Hit Oversample count = %d\n", 
+				best_ddrcal.hos_ct);
+			printf("** RDCC = 0x%08x\n", best_ddrcal.rdcc);
+			printf("*** -------------------------------\n");
 			printf("\n");
 		}
 
@@ -1201,40 +1370,47 @@ u32 DQS_autocalibration(void)
 		mtsdram(SDRAM_WRDTR, (val &
 		    ~(SDRAM_WRDTR_LLWP_MASK | SDRAM_WRDTR_WTR_MASK)) |
 		    ddr_wrdtr(SDRAM_WRDTR_LLWP_1_CYC |
-					(tcal.clocks.wrdtr << 25)));
+					(best_ddrcal.wdtr << 25)));
 
-		mtsdram(SDRAM_CLKTR, tcal.clocks.clktr << 30);
+		mtsdram(SDRAM_CLKTR, best_ddrcal.clkp << 30);
 
 		relock_memory_DLL();
 
 		mfsdram(SDRAM_RQDC, rqdc_reg);
 		rqdc_reg &= ~(SDRAM_RQDC_RQFD_MASK);
 		mtsdram(SDRAM_RQDC, rqdc_reg |
-				SDRAM_RQDC_RQFD_ENCODE(tcal.autocal.rqfd));
+				SDRAM_RQDC_RQFD_ENCODE(best_ddrcal.rqfd_mid));
 
 		mfsdram(SDRAM_RQDC, rqdc_reg);
-		debug("*** best_result: read value SDRAM_RQDC 0x%08x\n",
+		debug("*** set best result: read value SDRAM_RQDC 0x%08x\n",
 				rqdc_reg);
 
 		mfsdram(SDRAM_RFDC, rfdc_reg);
 		rfdc_reg &= ~(SDRAM_RFDC_RFFD_MASK);
 		mtsdram(SDRAM_RFDC, rfdc_reg |
-				SDRAM_RFDC_RFFD_ENCODE(tcal.autocal.rffd));
+				SDRAM_RFDC_RFFD_ENCODE(best_ddrcal.rffd_mid));
 
 		mfsdram(SDRAM_RFDC, rfdc_reg);
-		debug("*** best_result: read value SDRAM_RFDC 0x%08x\n",
+		debug("*** set best result: read value SDRAM_RFDC 0x%08x\n",
 				rfdc_reg);
 		mfsdram(SDRAM_RDCC, val);
-		debug("***  SDRAM_RDCC 0x%08x\n", val);
+		debug("*** set best result: read value SDRAM_RDCC 0x%08x\n", 
+				val);
 	} else {
 		/*
 		 * no valid windows were found
 		 */
-		printf("DQS memory calibration window can not be determined, "
-		       "terminating u-boot.\n");
+		printf("DQS memory calibration window can not be determined.\n ");
+		printf("U-Boot cannot continue.\n");
 		ppc4xx_ibm_ddr2_register_dump();
 		spd_ddr_init_hang();
 	}
+
+	sync();
+
+	/* Clear potential errors before continuing. */
+	set_mcsr(get_mcsr());
+	udelay(100);
 
 	blank_string(strlen(str));
 

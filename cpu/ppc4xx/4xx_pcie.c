@@ -364,12 +364,15 @@ static int check_error(void)
 	return err;
 }
 
+#define PPC4XX_INIT_PCIE_TIMEOUT 5000
+#define PPC4XX_INIT_PCIE_THEORETICAL_TIMEOUT 30
+
 /*
  * Initialize PCI Express core
  */
 int ppc4xx_init_pcie(void)
 {
-	int time_out = 20;
+	int time_out = PPC4XX_INIT_PCIE_TIMEOUT;
 
 	/* Set PLL clock receiver to LVPECL */
 	SDR_WRITE(PESDR0_PLLLCT1, SDR_READ(PESDR0_PLLLCT1) | 1 << 28);
@@ -390,13 +393,21 @@ int ppc4xx_init_pcie(void)
 	while (time_out) {
 		if (!(SDR_READ(PESDR0_PLLLCT3) & 0x10000000)) {
 			time_out--;
-			udelay(1);
+			udelay(10);
 		} else
 			break;
 	}
-	if (!time_out) {
-		printf("PCIE: VCO output not locked\n");
-		return -1;
+	if (!time_out)
+	{
+		printf("PCIE: VCO output not locked [after %d us]\n", PPC4XX_INIT_PCIE_TIMEOUT * 10);
+ 		return -1;
+ 	}
+	else
+	{
+		if (time_out <= (PPC4XX_INIT_PCIE_TIMEOUT - PPC4XX_INIT_PCIE_THEORETICAL_TIMEOUT))
+		{
+			printf("PCIE: VCO output locked but only after %d us\n", (PPC4XX_INIT_PCIE_TIMEOUT  - time_out) * 10);
+		}
 	}
 	return 0;
 }
